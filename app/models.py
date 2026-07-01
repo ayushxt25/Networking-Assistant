@@ -343,3 +343,36 @@ class AuditLogResponse(BaseModel):
     message: Optional[str] = None
     metadata_json: Optional[str] = None
     created_at: datetime
+
+
+class GraphContactScoreResponse(BaseModel):
+    contact_id: int
+    name: str
+    centrality_score: float
+    interaction_count: int
+    shared_signal_count: int
+
+
+class GraphContactInsightResponse(BaseModel):
+    contact_id: int
+    name: str
+    reason: str
+
+
+class GraphClusterResponse(BaseModel):
+    cluster_id: str
+    contact_ids: List[int]
+    contact_names: List[str]
+    shared_signals: List[str]
+
+
+class NetworkGraphInsightsResponse(BaseModel):
+    total_contacts: int
+    network_density_estimate: float
+    centrality_scores: List[GraphContactScoreResponse]
+    weak_tie_candidates: List[GraphContactInsightResponse]
+    strong_tie_contacts: List[GraphContactInsightResponse]
+    bridge_contacts: List[GraphContactInsightResponse]
+    isolated_contacts: List[GraphContactInsightResponse]
+    clusters: List[GraphClusterResponse]
+    created_at: datetime
