@@ -4,6 +4,7 @@ from typing import List, Optional, Sequence
 from sqlalchemy.orm import Session
 
 from app.db_models import Contact, Event, FollowUp, Interaction, UserProfile
+from app.services.semantic_memory_service import semantic_search_memories
 
 
 def _split_csv(value: Optional[str]) -> List[str]:
@@ -35,6 +36,7 @@ class GenerationContext:
     interactions_summary: List[str]
     events_summary: List[str]
     follow_ups_summary: List[str]
+    semantic_memory_summary: List[str]
 
     @property
     def combined_summary(self) -> Optional[str]:
@@ -50,6 +52,8 @@ class GenerationContext:
             sections.append("Events: " + " | ".join(self.events_summary))
         if self.follow_ups_summary:
             sections.append("Follow-ups: " + " | ".join(self.follow_ups_summary))
+        if self.semantic_memory_summary:
+            sections.append("Semantic memory: " + " | ".join(self.semantic_memory_summary))
 
         return "\n".join(sections) if sections else None
 
@@ -208,10 +212,19 @@ def assemble_generation_context(
             )
     follow_ups_summary = follow_ups_summary[:3]
 
+    semantic_matches = semantic_search_memories(
+        db=db,
+        query_text=" ".join([description, *interests, *themes]),
+        user_id=user_id,
+        top_k=3,
+    )
+    semantic_memory_summary = [match.text for match in semantic_matches]
+
     return GenerationContext(
         profile_summary=profile_summary,
         contacts_summary=contacts_summary,
         interactions_summary=interactions_summary,
         events_summary=events_summary,
         follow_ups_summary=follow_ups_summary,
+        semantic_memory_summary=semantic_memory_summary,
     )
