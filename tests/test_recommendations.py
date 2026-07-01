@@ -41,6 +41,23 @@ def test_recommendations_from_cold_contacts(client, auth_headers):
     )
 
 
+def test_recommendation_ids_are_generated_stably(client, auth_headers):
+    client.post(
+        "/contacts",
+        json={"name": "Stable", "company": "Delta", "role": "Investor", "relationship_strength": 5},
+        headers=auth_headers,
+    )
+
+    first = client.get("/recommendations", headers=auth_headers).json()
+    second = client.get("/recommendations", headers=auth_headers).json()
+
+    first_item = next(item for item in first if item["recommendation_type"] == "strengthen_high_value_contact")
+    second_item = next(item for item in second if item["recommendation_type"] == "strengthen_high_value_contact")
+    assert first_item["recommendation_id"]
+    assert first_item["recommendation_id"] == second_item["recommendation_id"]
+    assert first_item["id"] == first_item["recommendation_id"]
+
+
 def test_recommendations_using_user_goals_and_interests(client, auth_headers):
     client.put(
         "/profile",
@@ -126,6 +143,12 @@ def test_helpful_feedback_boosts_similar_recommendation_type(client, auth_header
         json={"name": "Mina", "company": "Orbit", "role": "Founder", "relationship_strength": 5},
         headers=auth_headers,
     ).json()
+    recommendation = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_type"] == "strengthen_high_value_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
 
     client.post(
         "/feedback",
@@ -133,7 +156,7 @@ def test_helpful_feedback_boosts_similar_recommendation_type(client, auth_header
             "suggestion": "Strengthen this relationship",
             "category": "helpful",
             "target_type": "recommendation",
-            "target_id": "strengthen_high_value_contact",
+            "target_id": recommendation["recommendation_id"],
         },
         headers=auth_headers,
     )
@@ -169,7 +192,7 @@ def test_dismissed_feedback_reduces_similar_recommendation_type(client, auth_hea
             "suggestion": "Not useful now",
             "category": "dismissed",
             "target_type": "recommendation",
-            "target_id": "strengthen_high_value_contact",
+            "target_id": base_item["recommendation_id"],
         },
         headers=auth_headers,
     )
@@ -190,13 +213,19 @@ def test_irrelevant_feedback_reduces_similar_recommendation_type(client, auth_he
         json={"name": "Ari", "company": "East", "role": "Founder", "relationship_strength": 4},
         headers=auth_headers,
     ).json()
+    recommendation = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_type"] == "strengthen_high_value_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
     client.post(
         "/feedback",
         json={
             "suggestion": "Not relevant",
             "category": "irrelevant",
             "target_type": "recommendation",
-            "target_id": "strengthen_high_value_contact",
+            "target_id": recommendation["recommendation_id"],
         },
         headers=auth_headers,
     )
@@ -217,6 +246,12 @@ def test_feedback_effect_is_bounded(client, auth_headers):
         json={"name": "Bounded", "company": "Axis", "role": "Founder", "relationship_strength": 5},
         headers=auth_headers,
     ).json()
+    recommendation = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_type"] == "strengthen_high_value_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
     for _ in range(10):
         client.post(
             "/feedback",
@@ -224,7 +259,7 @@ def test_feedback_effect_is_bounded(client, auth_headers):
                 "suggestion": "Strong yes",
                 "category": "accepted",
                 "target_type": "recommendation",
-                "target_id": "strengthen_high_value_contact",
+                "target_id": recommendation["recommendation_id"],
             },
             headers=auth_headers,
         )
@@ -259,7 +294,7 @@ def test_wrong_tone_does_not_strongly_reduce_recommendation_relevance(client, au
             "suggestion": "Tone issue",
             "category": "wrong_tone",
             "target_type": "recommendation",
-            "target_id": "strengthen_high_value_contact",
+            "target_id": base_item["recommendation_id"],
         },
         headers=auth_headers,
     )
@@ -312,6 +347,33 @@ def test_feedback_tuning_is_user_isolated(client):
     assert "Prior feedback" not in item["reason"]
 
 
+def test_recommendation_feedback_backward_compatibility_with_type_id(client, auth_headers):
+    contact = client.post(
+        "/contacts",
+        json={"name": "Legacy", "company": "Clear", "role": "Founder", "relationship_strength": 5},
+        headers=auth_headers,
+    ).json()
+    client.post(
+        "/feedback",
+        json={
+            "suggestion": "Legacy feedback",
+            "category": "helpful",
+            "target_type": "recommendation",
+            "target_id": "strengthen_high_value_contact",
+        },
+        headers=auth_headers,
+    )
+
+    response = client.get("/recommendations", headers=auth_headers)
+    item = next(
+        entry
+        for entry in response.json()
+        if entry["recommendation_type"] == "strengthen_high_value_contact"
+        and entry["related_contact_id"] == contact["id"]
+    )
+    assert "Prior feedback signaled" in item["reason"]
+
+
 def test_recommendation_impressions_are_logged(client, auth_headers):
     client.post(
         "/contacts",
@@ -335,14 +397,17 @@ def test_training_data_generated_from_impressions_and_feedback(client, auth_head
         json={"name": "Train", "company": "North", "role": "Founder", "relationship_strength": 5},
         headers=auth_headers,
     )
-    client.get("/recommendations", headers=auth_headers)
+    recommendations = client.get("/recommendations", headers=auth_headers).json()
+    recommendation = next(
+        item for item in recommendations if item["recommendation_type"] == "strengthen_high_value_contact"
+    )
     client.post(
         "/feedback",
         json={
             "suggestion": "Good recommendation",
             "category": "accepted",
             "target_type": "recommendation",
-            "target_id": "strengthen_high_value_contact",
+            "target_id": recommendation["recommendation_id"],
         },
         headers=auth_headers,
     )
@@ -354,6 +419,7 @@ def test_training_data_generated_from_impressions_and_feedback(client, auth_head
         for entry in response.json()
         if entry["recommendation_type"] == "strengthen_high_value_contact"
     )
+    assert row["recommendation_id"] == recommendation["recommendation_id"]
     assert row["label"] == 1
     assert row["feedback_category"] == "accepted"
     assert row["has_contact"] is True

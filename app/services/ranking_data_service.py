@@ -17,6 +17,7 @@ LABEL_BY_CATEGORY = {
 
 @dataclass
 class RankingTrainingRow:
+    recommendation_id: str
     recommendation_type: str
     priority_score: float
     has_contact: bool
@@ -41,20 +42,23 @@ def build_recommendation_training_data(db: Session, user_id: int) -> List[Rankin
         .all()
     )
 
-    feedback_by_type = {}
+    feedback_by_target_id = {}
     for entry in feedback_entries:
         if not entry.target_id:
             continue
-        feedback_by_type.setdefault(entry.target_id, []).append(entry)
+        feedback_by_target_id.setdefault(entry.target_id, []).append(entry)
 
     rows: List[RankingTrainingRow] = []
     for impression in impressions:
-        matching_feedback = feedback_by_type.get(impression.recommendation_type, [])
+        matching_feedback = feedback_by_target_id.get(impression.recommendation_id, [])
+        if not matching_feedback:
+            matching_feedback = feedback_by_target_id.get(impression.recommendation_type, [])
         latest_feedback = sorted(matching_feedback, key=lambda entry: entry.created_at, reverse=True)
         feedback = latest_feedback[0] if latest_feedback else None
         feedback_category = (feedback.category or feedback.action) if feedback else None
         rows.append(
             RankingTrainingRow(
+                recommendation_id=impression.recommendation_id,
                 recommendation_type=impression.recommendation_type,
                 priority_score=impression.priority_score,
                 has_contact=impression.related_contact_id is not None,

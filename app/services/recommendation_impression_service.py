@@ -18,6 +18,7 @@ def log_recommendation_impressions(
         [
             RecommendationImpression(
                 user_id=user_id,
+                recommendation_id=recommendation.recommendation_id,
                 recommendation_type=recommendation.recommendation_type,
                 title=recommendation.title,
                 priority_score=recommendation.priority_score,

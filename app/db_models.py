@@ -94,6 +94,7 @@ class RecommendationImpression(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    recommendation_id = Column(String(128), nullable=False, index=True)
     recommendation_type = Column(String(100), nullable=False, index=True)
     title = Column(String(255), nullable=False)
     priority_score = Column(Float, nullable=False)

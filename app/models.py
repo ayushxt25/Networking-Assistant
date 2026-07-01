@@ -250,6 +250,7 @@ class UserProfileResponse(UserProfileBase):
 
 class RecommendationResponse(BaseModel):
     id: str
+    recommendation_id: str
     recommendation_type: str
     title: str
     description: str
@@ -305,6 +306,7 @@ class FeedbackSummaryResponse(BaseModel):
 
 
 class RecommendationTrainingDataResponse(BaseModel):
+    recommendation_id: str
     recommendation_type: str
     priority_score: float
     has_contact: bool
