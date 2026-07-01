@@ -255,3 +255,19 @@ class RecommendationResponse(BaseModel):
     related_event_id: Optional[int] = None
     related_follow_up_id: Optional[int] = None
     created_at: datetime
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    total_contacts: int
+    total_events: int
+    total_interactions: int
+    total_follow_ups: int
+    overdue_follow_ups_count: int
+    completed_follow_ups_count: int
+    upcoming_follow_ups_count: int
+    cold_contacts_count: int
+    average_relationship_strength: float
+    interaction_frequency: float
+    top_relationship_tags: List[str]
+    network_health_score: float
+    created_at: datetime
