@@ -192,3 +192,101 @@ def test_linked_entities_must_belong_to_current_user(client):
         headers=other_headers,
     )
     assert response.status_code == 404
+
+
+def test_dispatch_on_create(client, auth_headers, monkeypatch):
+    calls = []
+
+    def fake_dispatch(user_id):
+        calls.append(user_id)
+        return {
+            "sync_user_semantic_memory": True,
+            "refresh_user_analytics": True,
+            "refresh_user_recommendations": True,
+        }
+
+    monkeypatch.setattr("app.routes.relationship_data.dispatch_user_refreshes", fake_dispatch)
+
+    response = client.post(
+        "/contacts",
+        json={"name": "Dispatch Create", "company": "Acme", "role": "Founder"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    assert len(calls) == 1
+
+
+def test_dispatch_on_update(client, auth_headers, monkeypatch):
+    calls = []
+
+    def fake_dispatch(user_id):
+        calls.append(user_id)
+        return {
+            "sync_user_semantic_memory": True,
+            "refresh_user_analytics": True,
+            "refresh_user_recommendations": True,
+        }
+
+    contact = client.post(
+        "/contacts",
+        json={"name": "Dispatch Update", "company": "Acme", "role": "Founder"},
+        headers=auth_headers,
+    ).json()
+    calls.clear()
+    monkeypatch.setattr("app.routes.relationship_data.dispatch_user_refreshes", fake_dispatch)
+
+    response = client.put(
+        f"/contacts/{contact['id']}",
+        json={"notes": "Updated"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+
+def test_dispatch_on_delete(client, auth_headers, monkeypatch):
+    calls = []
+
+    def fake_dispatch(user_id):
+        calls.append(user_id)
+        return {
+            "sync_user_semantic_memory": True,
+            "refresh_user_analytics": True,
+            "refresh_user_recommendations": True,
+        }
+
+    profile = client.put(
+        "/profile",
+        json={"full_name": "Delete Me"},
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200
+    calls.clear()
+    monkeypatch.setattr("app.routes.relationship_data.dispatch_user_refreshes", fake_dispatch)
+
+    response = client.delete("/profile", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+
+def test_dispatch_fail_open_behavior(client, auth_headers, monkeypatch):
+    def fake_dispatch(user_id):
+        return {
+            "sync_user_semantic_memory": False,
+            "refresh_user_analytics": False,
+            "refresh_user_recommendations": False,
+        }
+
+    monkeypatch.setattr("app.routes.relationship_data.dispatch_user_refreshes", fake_dispatch)
+
+    response = client.post(
+        "/events",
+        json={"title": "Fail Open Event"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["title"] == "Fail Open Event"
