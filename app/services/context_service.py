@@ -4,6 +4,7 @@ from typing import List, Optional, Sequence
 from sqlalchemy.orm import Session
 
 from app.db_models import Contact, Event, FollowUp, Interaction, UserProfile
+from app.services.retrieval_quality_service import rerank_memory_results
 from app.services.semantic_memory_service import semantic_search_memories
 
 
@@ -58,7 +59,18 @@ def _load_semantic_memory_summary(
     except Exception:
         return []
 
-    return [match.text for match in semantic_matches]
+    try:
+        reranked_matches = rerank_memory_results(
+            results=semantic_matches,
+            user_id=user_id,
+            query_text=query_text,
+            interests=interests,
+            themes=themes,
+            top_k=3,
+        )
+        return [match.result.text for match in reranked_matches]
+    except Exception:
+        return [match.text for match in semantic_matches]
 
 
 @dataclass

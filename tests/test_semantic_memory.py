@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta, timezone
+
 from app.db_models import Contact, User
 from app.services.embedding_service import HashEmbeddingService, build_embedding_service
 from app.services.memory_documents import build_memory_documents
+from app.services.retrieval_quality_service import rerank_memory_results
 from app.services.semantic_memory_service import semantic_search_memories
-from app.services.vector_store import InMemoryVectorStore
+from app.services.vector_store import InMemoryVectorStore, VectorSearchResult
 
 
 def test_memory_document_creation(db_session):
@@ -98,3 +101,83 @@ def test_user_isolation_in_semantic_search(db_session):
     assert results
     assert all(result.metadata["user_id"] == user_a.id for result in results)
     assert any("Alice" in result.text for result in results)
+
+
+def test_reranking_improves_ordering_based_on_keyword_overlap():
+    results = [
+        VectorSearchResult(
+            id="a",
+            text="General founder networking note",
+            metadata={"user_id": 1},
+            score=0.95,
+        ),
+        VectorSearchResult(
+            id="b",
+            text="Healthcare AI founder with machine learning background",
+            metadata={"user_id": 1},
+            score=0.80,
+        ),
+    ]
+    reranked = rerank_memory_results(
+        results=results,
+        user_id=1,
+        query_text="healthcare machine learning founder",
+        interests=["healthcare"],
+        themes=["machine learning"],
+        top_k=2,
+    )
+    assert reranked[0].result.id == "b"
+
+
+def test_duplicate_snippets_are_removed():
+    results = [
+        VectorSearchResult(id="a", text="AI healthcare founder", metadata={"user_id": 1}, score=0.9),
+        VectorSearchResult(id="b", text="AI healthcare founder", metadata={"user_id": 1}, score=0.8),
+    ]
+    reranked = rerank_memory_results(results=results, user_id=1, query_text="healthcare founder", top_k=3)
+    assert len(reranked) == 1
+
+
+def test_very_short_snippets_are_penalized():
+    results = [
+        VectorSearchResult(id="a", text="AI", metadata={"user_id": 1}, score=0.9),
+        VectorSearchResult(
+            id="b",
+            text="AI founder focused on healthcare partnerships",
+            metadata={"user_id": 1},
+            score=0.75,
+        ),
+    ]
+    reranked = rerank_memory_results(results=results, user_id=1, query_text="healthcare partnerships", top_k=2)
+    assert reranked[0].result.id == "b"
+
+
+def test_fresher_memory_is_preferred_when_relevant():
+    older = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
+    newer = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    results = [
+        VectorSearchResult(
+            id="old",
+            text="AI founder for healthcare partnerships",
+            metadata={"user_id": 1, "updated_at": older},
+            score=0.8,
+        ),
+        VectorSearchResult(
+            id="new",
+            text="AI founder for healthcare partnerships",
+            metadata={"user_id": 1, "updated_at": newer},
+            score=0.8,
+        ),
+    ]
+    reranked = rerank_memory_results(results=results, user_id=1, query_text="healthcare partnerships", top_k=2)
+    assert reranked[0].result.id == "new"
+
+
+def test_reranker_preserves_user_isolation():
+    results = [
+        VectorSearchResult(id="a", text="Private note", metadata={"user_id": 1}, score=0.9),
+        VectorSearchResult(id="b", text="Other user note", metadata={"user_id": 2}, score=0.99),
+    ]
+    reranked = rerank_memory_results(results=results, user_id=1, query_text="note", top_k=3)
+    assert len(reranked) == 1
+    assert reranked[0].result.id == "a"

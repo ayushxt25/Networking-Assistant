@@ -64,6 +64,11 @@ def client(test_engine):
         finally:
             db.close()
 
+    try:
+        app.state.limiter._storage.reset()
+    except Exception:
+        pass
+
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client

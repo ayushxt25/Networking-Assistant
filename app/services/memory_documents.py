@@ -12,6 +12,12 @@ def _split_csv(value: Optional[str]) -> List[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _isoformat_timestamp(value) -> Optional[str]:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
 @dataclass
 class MemoryDocument:
     id: str
@@ -48,7 +54,13 @@ def build_memory_documents(db: Session, user_id: int) -> List[MemoryDocument]:
                 entity_type="contact",
                 record_id=contact.id,
                 text=text,
-                metadata={"user_id": user_id, "entity_type": "contact", "record_id": contact.id},
+                metadata={
+                    "user_id": user_id,
+                    "entity_type": "contact",
+                    "record_id": contact.id,
+                    "created_at": _isoformat_timestamp(contact.created_at),
+                    "updated_at": _isoformat_timestamp(contact.updated_at),
+                },
             )
         )
 
@@ -72,7 +84,13 @@ def build_memory_documents(db: Session, user_id: int) -> List[MemoryDocument]:
                 entity_type="event",
                 record_id=event.id,
                 text=text,
-                metadata={"user_id": user_id, "entity_type": "event", "record_id": event.id},
+                metadata={
+                    "user_id": user_id,
+                    "entity_type": "event",
+                    "record_id": event.id,
+                    "created_at": _isoformat_timestamp(event.created_at),
+                    "updated_at": _isoformat_timestamp(event.updated_at),
+                },
             )
         )
 
@@ -95,7 +113,12 @@ def build_memory_documents(db: Session, user_id: int) -> List[MemoryDocument]:
                 entity_type="interaction",
                 record_id=interaction.id,
                 text=text,
-                metadata={"user_id": user_id, "entity_type": "interaction", "record_id": interaction.id},
+                metadata={
+                    "user_id": user_id,
+                    "entity_type": "interaction",
+                    "record_id": interaction.id,
+                    "created_at": _isoformat_timestamp(interaction.created_at),
+                },
             )
         )
 
@@ -118,7 +141,13 @@ def build_memory_documents(db: Session, user_id: int) -> List[MemoryDocument]:
                 entity_type="follow_up",
                 record_id=follow_up.id,
                 text=text,
-                metadata={"user_id": user_id, "entity_type": "follow_up", "record_id": follow_up.id},
+                metadata={
+                    "user_id": user_id,
+                    "entity_type": "follow_up",
+                    "record_id": follow_up.id,
+                    "created_at": _isoformat_timestamp(follow_up.created_at),
+                    "updated_at": _isoformat_timestamp(follow_up.updated_at),
+                },
             )
         )
 
@@ -143,7 +172,13 @@ def build_memory_documents(db: Session, user_id: int) -> List[MemoryDocument]:
                 entity_type="profile",
                 record_id=profile.id,
                 text=text,
-                metadata={"user_id": user_id, "entity_type": "profile", "record_id": profile.id},
+                metadata={
+                    "user_id": user_id,
+                    "entity_type": "profile",
+                    "record_id": profile.id,
+                    "created_at": _isoformat_timestamp(profile.created_at),
+                    "updated_at": _isoformat_timestamp(profile.updated_at),
+                },
             )
         )
 

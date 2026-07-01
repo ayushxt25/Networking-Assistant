@@ -1,6 +1,7 @@
 from app.routes import conversation as conversation_routes
 from app.services import context_service
 from app.services.context_service import assemble_generation_context
+from app.services.vector_store import VectorSearchResult
 
 
 def test_generation_with_empty_context(db_session):
@@ -186,6 +187,80 @@ def test_generation_vector_failure_fallback(client, auth_headers, monkeypatch):
 
     assert response.status_code == 200
     assert captured["relationship_context"] is None or "Semantic memory:" not in captured["relationship_context"]
+
+
+def test_generation_still_works_with_reranked_memory(client, auth_headers, monkeypatch):
+    captured = {}
+
+    def fake_generate_topics(themes, interests, relationship_context=None):
+        captured["relationship_context"] = relationship_context
+        return ["starter"]
+
+    monkeypatch.setattr(conversation_routes, "generate_topics", fake_generate_topics)
+    monkeypatch.setattr(
+        context_service,
+        "semantic_search_memories",
+        lambda **kwargs: [
+            VectorSearchResult(
+                id="generic",
+                text="General founder note",
+                metadata={"user_id": kwargs["user_id"]},
+                score=0.95,
+            ),
+            VectorSearchResult(
+                id="specific",
+                text="Healthcare AI founder interested in partnerships",
+                metadata={"user_id": kwargs["user_id"]},
+                score=0.75,
+            ),
+        ],
+    )
+
+    response = client.post(
+        "/generate-conversation",
+        json={"description": "Healthcare AI founder dinner", "interests": ["partnerships"]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert "Semantic memory:" in captured["relationship_context"]
+    assert "Healthcare AI founder" in captured["relationship_context"]
+
+
+def test_generation_reranker_failure_falls_back_to_raw_results(client, auth_headers, monkeypatch):
+    captured = {}
+
+    def fake_generate_topics(themes, interests, relationship_context=None):
+        captured["relationship_context"] = relationship_context
+        return ["starter"]
+
+    monkeypatch.setattr(conversation_routes, "generate_topics", fake_generate_topics)
+    monkeypatch.setattr(
+        context_service,
+        "semantic_search_memories",
+        lambda **kwargs: [
+            VectorSearchResult(
+                id="raw",
+                text="Raw semantic memory snippet",
+                metadata={"user_id": kwargs["user_id"]},
+                score=0.8,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        context_service,
+        "rerank_memory_results",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("rerank failed")),
+    )
+
+    response = client.post(
+        "/generate-conversation",
+        json={"description": "Founder meetup", "interests": ["ai"]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert "Raw semantic memory snippet" in captured["relationship_context"]
 
 
 def test_generation_semantic_memory_user_isolation(client, monkeypatch):
