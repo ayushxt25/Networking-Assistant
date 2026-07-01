@@ -18,7 +18,7 @@ is naturally a bit rough compared to larger models.
 
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,23 @@ def _has_local_model_cache(model_name: str) -> bool:
     return snapshots_dir.exists() and any(snapshots_dir.iterdir())
 
 
-def _build_prompt(themes: List[str], interests: List[str]) -> str:
+def _build_prompt(
+    themes: List[str],
+    interests: List[str],
+    relationship_context: Optional[str] = None,
+) -> str:
     theme_text = ", ".join(themes) if themes else "general topics"
     interest_text = ", ".join(interests) if interests else "meeting new people"
+    context_block = (
+        f"Relevant relationship context:\n{relationship_context}\n"
+        if relationship_context
+        else ""
+    )
 
     return (
         f"I'm attending an event focused on {theme_text}. "
         f"I'm personally interested in {interest_text}. "
+        f"{context_block}"
         f"Here are some conversation starters I could use:\n"
         f"1."
     )
@@ -81,18 +91,29 @@ def _get_generator():
     return _generator
 
 
-def _generate_topics_fallback(themes: List[str], interests: List[str]) -> List[str]:
+def _generate_topics_fallback(
+    themes: List[str],
+    interests: List[str],
+    relationship_context: Optional[str] = None,
+) -> List[str]:
     theme_text = ", ".join(themes) if themes else "the event"
     interest_text = ", ".join(interests) if interests else "meeting new people"
+    context_hint = ""
+    if relationship_context:
+        context_hint = " Based on your existing relationship context, where relevant."
 
     return [
-        f"What drew you to {theme_text}?",
+        f"What drew you to {theme_text}?{context_hint}",
         f"How does {interest_text} connect with your work right now?",
         f"What is one idea from {theme_text} you think more people should be discussing?",
     ]
 
 
-def generate_topics(themes: List[str], interests: List[str]) -> List[str]:
+def generate_topics(
+    themes: List[str],
+    interests: List[str],
+    relationship_context: Optional[str] = None,
+) -> List[str]:
     """
     Generate up to 3 conversation starter suggestions.
 
@@ -103,11 +124,11 @@ def generate_topics(themes: List[str], interests: List[str]) -> List[str]:
     Returns:
         A list of up to 3 non-empty conversation starter strings.
     """
-    prompt = _build_prompt(themes, interests)
+    prompt = _build_prompt(themes, interests, relationship_context)
 
     generator = _get_generator()
     if generator is None:
-        return _generate_topics_fallback(themes, interests)
+        return _generate_topics_fallback(themes, interests, relationship_context)
 
     output = generator(
         prompt,

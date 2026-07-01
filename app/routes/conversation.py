@@ -53,6 +53,7 @@ from app.services.event_analyzer import extract_event_themes
 from app.services.fact_checker import fact_check
 from app.services.feedback_logger import load_feedback, log_feedback
 from app.services.history_logger import load_history, log_conversation
+from app.services.context_service import assemble_generation_context
 from app.services.topic_generator import generate_topics
 
 router = APIRouter()
@@ -88,7 +89,18 @@ def generate_conversation(
     db: Session = Depends(get_db),
 ) -> ConversationResponse:
     themes = extract_event_themes(body.description)
-    suggestions = generate_topics(themes, body.interests)
+    generation_context = assemble_generation_context(
+        db=db,
+        user_id=current_user.id,
+        description=body.description,
+        interests=body.interests,
+        themes=themes,
+    )
+    suggestions = generate_topics(
+        themes,
+        body.interests,
+        relationship_context=generation_context.combined_summary,
+    )
 
     # Automatic side-effect logging: every successful generation is saved
     # to this user's history without the frontend needing a separate call.
