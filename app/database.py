@@ -8,17 +8,14 @@ scale application. DATABASE_URL is read from the environment so it can be
 swapped for Postgres/MySQL in a real deployment without code changes.
 """
 
-import os
 import re
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from app.config import get_database_url
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
-
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_SQLITE_PATH}")
+DATABASE_URL = get_database_url()
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
