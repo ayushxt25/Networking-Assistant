@@ -1,8 +1,10 @@
-from typing import List, Optional, Type
+from typing import List, Literal, Optional, Type
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.api_utils import normalize_sort_order, paginate_query, pagination_limit, pagination_offset
 from app.database import get_db
 from app.db_models import Contact, Event, FollowUp, Interaction, User, UserProfile
 from app.dependencies import get_current_user
@@ -156,10 +158,34 @@ def create_contact(
 @router.get("/contacts", response_model=List[ContactResponse])
 def list_contacts(
     request: Request,
+    limit: int = pagination_limit(),
+    offset: int = pagination_offset(),
+    q: Optional[str] = None,
+    company: Optional[str] = None,
+    tag: Optional[str] = None,
+    sort_by: Literal["created_at", "updated_at", "name", "company", "relationship_strength"] = "created_at",
+    sort_order: Literal["asc", "desc"] = "desc",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[ContactResponse]:
-    contacts = db.query(Contact).filter(Contact.user_id == current_user.id).order_by(Contact.created_at.desc()).all()
+    query = db.query(Contact).filter(Contact.user_id == current_user.id)
+    if q:
+        pattern = f"%{q}%"
+        query = query.filter(
+            or_(
+                Contact.name.ilike(pattern),
+                Contact.company.ilike(pattern),
+                Contact.role.ilike(pattern),
+                Contact.notes.ilike(pattern),
+            )
+        )
+    if company:
+        query = query.filter(Contact.company.ilike(f"%{company}%"))
+    if tag:
+        query = query.filter(Contact.tags.ilike(f"%{tag}%"))
+    sort_column = getattr(Contact, sort_by)
+    query = query.order_by(sort_column.desc() if normalize_sort_order(sort_order) else sort_column.asc(), Contact.id.desc())
+    contacts = paginate_query(query, limit, offset).all()
     return [_contact_response(contact) for contact in contacts]
 
 
@@ -225,10 +251,24 @@ def create_event(
 @router.get("/events", response_model=List[EventResponse])
 def list_events(
     request: Request,
+    limit: int = pagination_limit(),
+    offset: int = pagination_offset(),
+    q: Optional[str] = None,
+    location: Optional[str] = None,
+    sort_by: Literal["created_at", "updated_at", "event_date", "title"] = "created_at",
+    sort_order: Literal["asc", "desc"] = "desc",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[EventResponse]:
-    events = db.query(Event).filter(Event.user_id == current_user.id).order_by(Event.created_at.desc()).all()
+    query = db.query(Event).filter(Event.user_id == current_user.id)
+    if q:
+        pattern = f"%{q}%"
+        query = query.filter(or_(Event.title.ilike(pattern), Event.description.ilike(pattern)))
+    if location:
+        query = query.filter(Event.location.ilike(f"%{location}%"))
+    sort_column = getattr(Event, sort_by)
+    query = query.order_by(sort_column.desc() if normalize_sort_order(sort_order) else sort_column.asc(), Event.id.desc())
+    events = paginate_query(query, limit, offset).all()
     return [_event_response(event) for event in events]
 
 
@@ -295,15 +335,27 @@ def create_interaction(
 @router.get("/interactions", response_model=List[InteractionResponse])
 def list_interactions(
     request: Request,
+    limit: int = pagination_limit(),
+    offset: int = pagination_offset(),
+    interaction_type: Optional[str] = None,
+    contact_id: Optional[int] = None,
+    event_id: Optional[int] = None,
+    sort_order: Literal["asc", "desc"] = "desc",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[InteractionResponse]:
-    interactions = (
-        db.query(Interaction)
-        .filter(Interaction.user_id == current_user.id)
-        .order_by(Interaction.created_at.desc())
-        .all()
+    query = db.query(Interaction).filter(Interaction.user_id == current_user.id)
+    if interaction_type:
+        query = query.filter(Interaction.interaction_type.ilike(f"%{interaction_type}%"))
+    if contact_id is not None:
+        query = query.filter(Interaction.contact_id == contact_id)
+    if event_id is not None:
+        query = query.filter(Interaction.event_id == event_id)
+    query = query.order_by(
+        Interaction.created_at.desc() if normalize_sort_order(sort_order) else Interaction.created_at.asc(),
+        Interaction.id.desc(),
     )
+    interactions = paginate_query(query, limit, offset).all()
     return [_interaction_response(interaction) for interaction in interactions]
 
 
@@ -371,10 +423,26 @@ def create_follow_up(
 @router.get("/follow-ups", response_model=List[FollowUpResponse])
 def list_follow_ups(
     request: Request,
+    limit: int = pagination_limit(),
+    offset: int = pagination_offset(),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    contact_id: Optional[int] = None,
+    event_id: Optional[int] = None,
+    sort_by: Literal["created_at", "updated_at", "due_date", "title"] = "created_at",
+    sort_order: Literal["asc", "desc"] = "desc",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[FollowUpResponse]:
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == current_user.id).order_by(FollowUp.created_at.desc()).all()
+    query = db.query(FollowUp).filter(FollowUp.user_id == current_user.id)
+    if status_filter:
+        query = query.filter(FollowUp.status.ilike(f"%{status_filter}%"))
+    if contact_id is not None:
+        query = query.filter(FollowUp.contact_id == contact_id)
+    if event_id is not None:
+        query = query.filter(FollowUp.event_id == event_id)
+    sort_column = getattr(FollowUp, sort_by)
+    query = query.order_by(sort_column.desc() if normalize_sort_order(sort_order) else sort_column.asc(), FollowUp.id.desc())
+    follow_ups = paginate_query(query, limit, offset).all()
     return [_follow_up_response(follow_up) for follow_up in follow_ups]
 
 

@@ -1,8 +1,9 @@
-from typing import List
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from app.api_utils import DEFAULT_LIMIT, MAX_LIMIT
 from app.database import get_db
 from app.db_models import User
 from app.dependencies import get_current_user
@@ -37,10 +38,27 @@ def _serialize_recommendations(
 @router.get("/recommendations", response_model=List[RecommendationResponse])
 def list_recommendations(
     request: Request,
+    limit: int = DEFAULT_LIMIT,
+    offset: int = 0,
+    recommendation_type: Optional[str] = None,
+    min_priority_score: Optional[float] = None,
+    sort_by: Literal["priority_score", "created_at"] = "priority_score",
+    sort_order: Literal["asc", "desc"] = "desc",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[RecommendationResponse]:
     recommendations = generate_recommendations(db, current_user.id)
+    if recommendation_type:
+        recommendations = [
+            item for item in recommendations if item.recommendation_type == recommendation_type
+        ]
+    if min_priority_score is not None:
+        recommendations = [item for item in recommendations if item.priority_score >= min_priority_score]
+    reverse = sort_order == "desc"
+    recommendations = sorted(recommendations, key=lambda item: getattr(item, sort_by), reverse=reverse)
+    limit = max(1, min(limit, MAX_LIMIT))
+    offset = max(0, offset)
+    recommendations = recommendations[offset: offset + limit]
     log_audit_event(
         event_type="recommendation_generation",
         status="completed",
@@ -56,10 +74,11 @@ def list_recommendations(
 @router.get("/recommendations/next-best-actions", response_model=List[RecommendationResponse])
 def next_best_actions(
     request: Request,
+    limit: int = 5,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[RecommendationResponse]:
-    recommendations = generate_recommendations(db, current_user.id)[:5]
+    recommendations = generate_recommendations(db, current_user.id)[: max(1, min(limit, 10))]
     log_audit_event(
         event_type="recommendation_generation",
         status="completed",
