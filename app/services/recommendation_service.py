@@ -6,11 +6,15 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy.orm import Session
 
 from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
-from app.db_models import Contact, Event, Feedback, FollowUp, Interaction, UserProfile
+from app.db_models import Contact, Feedback, FollowUp, Interaction
 from app.services.cache_service import cache_key_for_user, get_cached_json, set_cached_json
 from app.services.metrics_service import get_metrics_service
 from app.services.ml_ranker_service import score_recommendation_with_ranker
-from app.services.personalization_service import get_recommendation_personalization_adjustment
+from app.services.personalization_service import (
+    get_personalization_signal_state,
+    get_recommendation_personalization_adjustment,
+)
+from app.services.user_data_snapshot import get_user_data_snapshot
 
 
 def _utcnow() -> datetime:
@@ -142,24 +146,29 @@ def _deserialize_recommendation(payload: dict) -> RecommendationItem:
 def _generate_recommendations_uncached(db: Session, user_id: int) -> List[RecommendationItem]:
     now = _utcnow()
     recommendations: List[RecommendationItem] = []
-    feedback_entries = (
-        db.query(Feedback)
-        .filter(Feedback.user_id == user_id, Feedback.target_type == "recommendation")
-        .all()
-    )
-
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    snapshot = get_user_data_snapshot(db, user_id)
+    feedback_entries = snapshot.recommendation_feedback
+    profile = snapshot.profile
     goal_terms = set(_split_csv(profile.goals) + _split_csv(profile.interests)) if profile else set()
-
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    events = db.query(Event).filter(Event.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
+    contacts = snapshot.contacts
+    events = snapshot.events
+    follow_ups = snapshot.follow_ups
+    interactions = snapshot.interactions
+    contacts_by_id = snapshot.contacts_by_id
+    events_by_id = snapshot.events_by_id
+    personalization_state = get_personalization_signal_state(db, user_id, snapshot=snapshot)
 
     interactions_by_contact: dict[int, List[Interaction]] = {}
     for interaction in interactions:
         if interaction.contact_id is not None:
             interactions_by_contact.setdefault(interaction.contact_id, []).append(interaction)
+    open_follow_up_by_contact: dict[int, FollowUp] = {}
+    for follow_up in follow_ups:
+        if follow_up.contact_id is None or follow_up.status.lower() == "done":
+            continue
+        current = open_follow_up_by_contact.get(follow_up.contact_id)
+        if current is None or (follow_up.created_at, follow_up.id) > (current.created_at, current.id):
+            open_follow_up_by_contact[follow_up.contact_id] = follow_up
 
     for follow_up in follow_ups:
         due_in_days = _days_until(follow_up.due_date, now)
@@ -291,14 +300,7 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
                 )
             )
 
-        open_follow_up = next(
-            (
-                follow_up
-                for follow_up in follow_ups
-                if follow_up.contact_id == contact.id and follow_up.status.lower() != "done"
-            ),
-            None,
-        )
+        open_follow_up = open_follow_up_by_contact.get(contact.id)
         if open_follow_up is None and interaction_frequency > 0 and strength >= 3:
             recommendation_id = build_recommendation_id(
                 user_id,
@@ -331,14 +333,8 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
         recommendation.reason = f"{recommendation.reason} {feedback_reason}"
 
     for recommendation in recommendations:
-        contact = next(
-            (item for item in contacts if item.id == recommendation.related_contact_id),
-            None,
-        )
-        event = next(
-            (item for item in events if item.id == recommendation.related_event_id),
-            None,
-        )
+        contact = contacts_by_id.get(recommendation.related_contact_id) if recommendation.related_contact_id is not None else None
+        event = events_by_id.get(recommendation.related_event_id) if recommendation.related_event_id is not None else None
         personalization = get_recommendation_personalization_adjustment(
             db,
             user_id,
@@ -346,6 +342,7 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
             contact=contact,
             event=event,
             text=f"{recommendation.title} {recommendation.description}",
+            state=personalization_state,
         )
         personalization_boost = personalization.personalization_boost
         if personalization_boost > 0:
@@ -378,10 +375,20 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
 
 
 def generate_recommendations(db: Session, user_id: int) -> List[RecommendationItem]:
+    session_cache = db.info.setdefault("generated_recommendations", {})
+    if user_id in session_cache:
+        recommendations = session_cache[user_id]
+        try:
+            get_metrics_service().record_recommendation_generation(len(recommendations))
+        except Exception:
+            pass
+        return recommendations
+
     cache_key = cache_key_for_user(user_id, "recommendations")
     cached = get_cached_json(cache_key)
     if cached is not None:
         recommendations = [_deserialize_recommendation(item) for item in cached]
+        session_cache[user_id] = recommendations
         try:
             get_metrics_service().record_recommendation_generation(len(recommendations))
         except Exception:
@@ -389,6 +396,7 @@ def generate_recommendations(db: Session, user_id: int) -> List[RecommendationIt
         return recommendations
 
     recommendations = _generate_recommendations_uncached(db, user_id)
+    session_cache[user_id] = recommendations
     set_cached_json(cache_key, [_serialize_recommendation(item) for item in recommendations])
     try:
         get_metrics_service().record_recommendation_generation(len(recommendations))

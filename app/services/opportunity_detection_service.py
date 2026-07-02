@@ -6,13 +6,13 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy.orm import Session
 
 from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
-from app.db_models import Contact, Event, FollowUp, Interaction
 from app.services.analytics_service import get_analytics_summary
 from app.services.metrics_service import get_metrics_service
 from app.services.network_graph_service import get_network_graph_insights
-from app.services.personalization_service import get_opportunity_personalization_adjustment
+from app.services.personalization_service import get_opportunity_personalization_adjustment, get_personalization_signal_state
 from app.services.recommendation_service import generate_recommendations
 from app.services.relationship_scoring_service import get_relationship_scores
+from app.services.user_data_snapshot import get_user_data_snapshot
 
 
 def _utcnow() -> datetime:
@@ -71,18 +71,26 @@ class OpportunityItem:
 
 def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
     now = _utcnow()
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    events = db.query(Event).filter(Event.user_id == user_id).all()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
+    snapshot = get_user_data_snapshot(db, user_id)
+    contacts = snapshot.contacts
+    events = snapshot.events
+    interactions = snapshot.interactions
+    follow_ups = snapshot.follow_ups
 
     if not contacts and not events and not follow_ups:
         return []
 
     analytics = get_analytics_summary(db, user_id)
     graph = get_network_graph_insights(db, user_id)
-    relationship_scores = get_relationship_scores(db, user_id)
     recommendations = generate_recommendations(db, user_id)
+    relationship_scores = get_relationship_scores(
+        db,
+        user_id,
+        snapshot=snapshot,
+        recommendations=recommendations,
+        graph=graph,
+    )
+    personalization_state = get_personalization_signal_state(db, user_id, snapshot=snapshot)
 
     score_by_contact = {item.contact_id: item for item in relationship_scores.scores}
     contacts_by_id = {contact.id: contact for contact in contacts}
@@ -105,10 +113,14 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
             )
         ] = recommendation.priority_score
 
-    interactions_by_contact: dict[int, list[Interaction]] = {contact.id: [] for contact in contacts}
+    interactions_by_contact: dict[int, list] = {contact.id: [] for contact in contacts}
+    latest_interaction_by_contact: dict[int, datetime] = {}
     for interaction in interactions:
         if interaction.contact_id in interactions_by_contact:
             interactions_by_contact[interaction.contact_id].append(interaction)
+            previous = latest_interaction_by_contact.get(interaction.contact_id)
+            if previous is None or interaction.created_at > previous:
+                latest_interaction_by_contact[interaction.contact_id] = interaction.created_at
 
     seen: set[tuple[str, Optional[int], Optional[int], Optional[int]]] = set()
     opportunities: list[OpportunityItem] = []
@@ -139,6 +151,7 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
             contact=contacts_by_id.get(related_contact_id) if related_contact_id is not None else None,
             event=events_by_id.get(related_event_id) if related_event_id is not None else None,
             text=f"{title} {description}",
+            state=personalization_state,
         )
         adjusted_priority = round(
             _clamp(base_priority + personalization.personalization_boost, 0, 100),
@@ -240,12 +253,7 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
         score_item = score_by_contact.get(contact.id)
         if score_item is None:
             continue
-        contact_interactions = sorted(
-            interactions_by_contact[contact.id],
-            key=lambda item: item.created_at,
-            reverse=True,
-        )
-        recency_days = _days_since(contact_interactions[0].created_at if contact_interactions else None, now)
+        recency_days = _days_since(latest_interaction_by_contact.get(contact.id), now)
         recommendation_priority = max(
             (
                 priority

@@ -10,6 +10,8 @@ def log_recommendation_impressions(
     db: Session,
     user_id: int,
     recommendations: List[RecommendationItem],
+    *,
+    commit: bool = True,
 ) -> None:
     if not recommendations:
         return
@@ -30,4 +32,7 @@ def log_recommendation_impressions(
             for recommendation in recommendations
         ]
     )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()

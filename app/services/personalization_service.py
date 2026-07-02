@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db_models import Contact, Event, Feedback, FollowUp, Interaction, RecommendationImpression, UserProfile
+from app.services.user_data_snapshot import UserDataSnapshot, get_user_data_snapshot
 
 FEEDBACK_WEIGHTS = {
     "accepted": 4.0,
@@ -92,23 +93,24 @@ class _SignalState:
     confidence_score: float
 
 
-def _build_signal_state(db: Session, user_id: int) -> _SignalState:
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
-    feedback_entries = (
-        db.query(Feedback)
-        .filter(Feedback.user_id == user_id, Feedback.target_type == "recommendation")
-        .order_by(Feedback.created_at.desc())
-        .all()
-    )
-    impressions = (
-        db.query(RecommendationImpression)
-        .filter(RecommendationImpression.user_id == user_id)
-        .order_by(RecommendationImpression.created_at.desc())
-        .all()
-    )
+def _build_signal_state(
+    db: Session,
+    user_id: int,
+    *,
+    snapshot: Optional[UserDataSnapshot] = None,
+) -> _SignalState:
+    signal_cache = db.info.setdefault("personalization_signal_state", {})
+    cached_state = signal_cache.get(user_id)
+    if cached_state is not None and snapshot is None:
+        return cached_state
+
+    snapshot = snapshot or get_user_data_snapshot(db, user_id)
+    profile = snapshot.profile
+    contacts = snapshot.contacts
+    interactions = snapshot.interactions
+    follow_ups = snapshot.follow_ups
+    feedback_entries = snapshot.recommendation_feedback
+    impressions = snapshot.recommendation_impressions
 
     contacts_by_id = {contact.id: contact for contact in contacts}
     impression_by_id = {item.recommendation_id: item for item in impressions}
@@ -165,7 +167,7 @@ def _build_signal_state(db: Session, user_id: int) -> _SignalState:
 
     evidence_count = len(feedback_entries) + len(interactions) + completed_follow_ups + len(goal_terms)
     confidence_score = round(_clamp(evidence_count / 12.0, 0.0, 1.0), 2)
-    return _SignalState(
+    state = _SignalState(
         recommendation_type_weights=recommendation_type_weights,
         opportunity_type_weights=opportunity_type_weights,
         contact_category_weights=contact_category_weights,
@@ -174,12 +176,30 @@ def _build_signal_state(db: Session, user_id: int) -> _SignalState:
         follow_up_completion_ratio=follow_up_completion_ratio,
         confidence_score=confidence_score,
     )
+    signal_cache[user_id] = state
+    return state
 
 
-def get_personalization_profile(db: Session, user_id: int) -> PersonalizationProfile:
+def get_personalization_signal_state(
+    db: Session,
+    user_id: int,
+    *,
+    snapshot: Optional[UserDataSnapshot] = None,
+) -> _SignalState:
+    return _build_signal_state(db, user_id, snapshot=snapshot)
+
+
+def get_personalization_profile(
+    db: Session,
+    user_id: int,
+    *,
+    snapshot: Optional[UserDataSnapshot] = None,
+    state: Optional[_SignalState] = None,
+) -> PersonalizationProfile:
     now = _utcnow()
-    state = _build_signal_state(db, user_id)
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    snapshot = snapshot or get_user_data_snapshot(db, user_id)
+    state = state or _build_signal_state(db, user_id, snapshot=snapshot)
+    profile = snapshot.profile
 
     completeness_fields = [
         bool(profile and profile.full_name),
@@ -264,8 +284,9 @@ def get_recommendation_personalization_adjustment(
     contact: Optional[Contact] = None,
     event: Optional[Event] = None,
     text: str = "",
+    state: Optional[_SignalState] = None,
 ) -> PersonalizationAdjustment:
-    state = _build_signal_state(db, user_id)
+    state = state or _build_signal_state(db, user_id)
     reasons: list[str] = []
     boost = 0.0
 
@@ -317,8 +338,9 @@ def get_opportunity_personalization_adjustment(
     contact: Optional[Contact] = None,
     event: Optional[Event] = None,
     text: str = "",
+    state: Optional[_SignalState] = None,
 ) -> PersonalizationAdjustment:
-    state = _build_signal_state(db, user_id)
+    state = state or _build_signal_state(db, user_id)
     reasons: list[str] = []
     boost = 0.0
 
@@ -363,8 +385,10 @@ def get_relationship_personalization_boost(
     db: Session,
     user_id: int,
     contact: Contact,
+    *,
+    state: Optional[_SignalState] = None,
 ) -> PersonalizationAdjustment:
-    state = _build_signal_state(db, user_id)
+    state = state or _build_signal_state(db, user_id)
     boost, reasons = _contact_match_boost(state, contact)
     goal_boost, goal_reasons = _goal_alignment_boost(state, f"{contact.notes or ''} {' '.join(_split_csv(contact.tags))}")
     boost += goal_boost

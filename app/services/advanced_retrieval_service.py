@@ -11,6 +11,7 @@ from app.services.metrics_service import get_metrics_service
 from app.services.personalization_service import get_personalization_profile
 from app.services.retrieval_quality_service import rerank_memory_results
 from app.services.semantic_memory_service import semantic_search_memories
+from app.services.user_data_snapshot import get_user_data_snapshot
 from app.services.vector_store import VectorSearchResult
 
 
@@ -152,17 +153,14 @@ def advanced_retrieve_relationship_intelligence(
             return []
         rerank_by_id = {}
 
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    events = db.query(Event).filter(Event.user_id == user_id).all()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
-    feedback_entries = (
-        db.query(Feedback)
-        .filter(Feedback.user_id == user_id, Feedback.target_type == "recommendation")
-        .all()
-    )
+    snapshot = get_user_data_snapshot(db, user_id)
+    contacts = snapshot.contacts
+    events = snapshot.events
+    interactions = snapshot.interactions
+    follow_ups = snapshot.follow_ups
+    feedback_entries = snapshot.recommendation_feedback
     graph = get_network_graph_insights(db, user_id)
-    personalization = get_personalization_profile(db, user_id)
+    personalization = get_personalization_profile(db, user_id, snapshot=snapshot)
 
     contacts_by_id = {contact.id: contact for contact in contacts}
     events_by_id = {event.id: event for event in events}

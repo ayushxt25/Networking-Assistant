@@ -6,7 +6,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.db_models import Contact, Event, FollowUp, Interaction
+from app.db_models import Contact
+from app.services.user_data_snapshot import get_user_data_snapshot
 
 
 def _utcnow() -> datetime:
@@ -57,13 +58,19 @@ class NetworkGraphInsights:
 
 
 def get_network_graph_insights(db: Session, user_id: int) -> NetworkGraphInsights:
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
-    events = db.query(Event).filter(Event.user_id == user_id).all()
+    cache = db.info.setdefault("network_graph_insights", {})
+    cached = cache.get(user_id)
+    if cached is not None:
+        return cached
+
+    snapshot = get_user_data_snapshot(db, user_id)
+    contacts = snapshot.contacts
+    interactions = snapshot.interactions
+    follow_ups = snapshot.follow_ups
+    events = snapshot.events
 
     if not contacts:
-        return NetworkGraphInsights(
+        insights = NetworkGraphInsights(
             total_contacts=0,
             network_density_estimate=0.0,
             centrality_scores=[],
@@ -74,6 +81,8 @@ def get_network_graph_insights(db: Session, user_id: int) -> NetworkGraphInsight
             clusters=[],
             created_at=_utcnow(),
         )
+        cache[user_id] = insights
+        return insights
 
     contact_by_id = {contact.id: contact for contact in contacts}
     event_titles = {event.id: event.title for event in events}
@@ -228,7 +237,7 @@ def get_network_graph_insights(db: Session, user_id: int) -> NetworkGraphInsight
     bridge_contacts.sort(key=lambda item: item.name.lower())
     isolated_contacts.sort(key=lambda item: item.name.lower())
 
-    return NetworkGraphInsights(
+    insights = NetworkGraphInsights(
         total_contacts=len(contacts),
         network_density_estimate=density,
         centrality_scores=centrality_scores,
@@ -239,3 +248,5 @@ def get_network_graph_insights(db: Session, user_id: int) -> NetworkGraphInsight
         clusters=clusters,
         created_at=_utcnow(),
     )
+    cache[user_id] = insights
+    return insights

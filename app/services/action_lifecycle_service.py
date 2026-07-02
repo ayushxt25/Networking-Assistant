@@ -7,6 +7,7 @@ from app.db_models import ActionLifecycleState
 
 VALID_ENTITY_KINDS = {"recommendation", "opportunity"}
 VALID_STATUSES = {"new", "accepted", "dismissed", "completed", "converted_to_follow_up"}
+SEEN_WRITE_INTERVAL_SECONDS = 300
 
 
 def _utcnow() -> datetime:
@@ -112,6 +113,7 @@ def merge_lifecycle_state(
     entity_id_field: str,
     entity_type_field: str,
     mark_seen: bool = True,
+    commit: bool = True,
 ) -> list[dict]:
     serialized_items: list[dict] = []
     raw_items = list(items)
@@ -151,14 +153,25 @@ def merge_lifecycle_state(
                 state_by_entity_id[entity_id] = state
                 pending = True
             else:
+                should_refresh_seen = (
+                    state.first_seen_at is None
+                    or state.last_seen_at is None
+                    or (now - (state.last_seen_at if state.last_seen_at.tzinfo else state.last_seen_at.replace(tzinfo=timezone.utc))).total_seconds()
+                    >= SEEN_WRITE_INTERVAL_SECONDS
+                )
                 if state.first_seen_at is None:
                     state.first_seen_at = now
-                state.last_seen_at = now
+                if should_refresh_seen:
+                    state.last_seen_at = now
+                    pending = True
                 if not state.entity_type:
                     state.entity_type = entity_type
-                pending = True
+                    pending = True
         if pending:
-            db.commit()
+            if commit:
+                db.commit()
+            else:
+                db.flush()
             for state in state_by_entity_id.values():
                 if state.id is None:
                     db.refresh(state)

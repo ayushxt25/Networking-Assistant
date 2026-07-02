@@ -30,7 +30,7 @@ def _serialize_recommendations(
     recommendations,
 ) -> List[RecommendationResponse]:
     try:
-        log_recommendation_impressions(db, user_id, recommendations)
+        log_recommendation_impressions(db, user_id, recommendations, commit=False)
     except Exception:
         db.rollback()
 
@@ -41,7 +41,10 @@ def _serialize_recommendations(
         recommendations,
         entity_id_field="recommendation_id",
         entity_type_field="recommendation_type",
+        commit=False,
     )
+    if recommendations:
+        db.commit()
     return [RecommendationResponse(**recommendation) for recommendation in merged]
 
 

@@ -4,10 +4,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.db_models import Contact, Feedback, FollowUp, Interaction, UserProfile
+from app.db_models import Contact, Feedback, FollowUp, Interaction
 from app.services.network_graph_service import get_network_graph_insights
-from app.services.personalization_service import get_relationship_personalization_boost
+from app.services.personalization_service import get_personalization_signal_state, get_relationship_personalization_boost
 from app.services.recommendation_service import generate_recommendations
+from app.services.user_data_snapshot import UserDataSnapshot, get_user_data_snapshot
 
 
 def _utcnow() -> datetime:
@@ -80,27 +81,29 @@ def get_relationship_scores(
     db: Session,
     user_id: int,
     contact_id: Optional[int] = None,
+    *,
+    snapshot: Optional[UserDataSnapshot] = None,
+    recommendations=None,
+    graph=None,
 ) -> RelationshipScoreList:
     now = _utcnow()
-    contacts_query = db.query(Contact).filter(Contact.user_id == user_id)
+    snapshot = snapshot or get_user_data_snapshot(db, user_id)
+    contacts = snapshot.contacts
     if contact_id is not None:
-        contacts_query = contacts_query.filter(Contact.id == contact_id)
-    contacts = contacts_query.all()
+        contacts = [contact for contact in contacts if contact.id == contact_id]
 
     if not contacts:
         return RelationshipScoreList(scores=[], created_at=now)
 
-    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    profile = snapshot.profile
     profile_terms = set(_split_csv(profile.interests) + _split_csv(profile.goals)) if profile else set()
-    interactions = db.query(Interaction).filter(Interaction.user_id == user_id).all()
-    follow_ups = db.query(FollowUp).filter(FollowUp.user_id == user_id).all()
-    feedback_entries = (
-        db.query(Feedback)
-        .filter(Feedback.user_id == user_id, Feedback.target_type == "recommendation")
-        .all()
-    )
-    recommendations = generate_recommendations(db, user_id)
-    graph = get_network_graph_insights(db, user_id)
+    interactions = snapshot.interactions
+    follow_ups = snapshot.follow_ups
+    feedback_entries = snapshot.recommendation_feedback
+    recommendations = recommendations or generate_recommendations(db, user_id)
+    graph = graph or get_network_graph_insights(db, user_id)
+    events_by_id = snapshot.events_by_id
+    personalization_state = get_personalization_signal_state(db, user_id, snapshot=snapshot)
 
     graph_scores = {item.contact_id: item.centrality_score for item in graph.centrality_scores}
     bridge_ids = {item.contact_id for item in graph.bridge_contacts}
@@ -119,14 +122,15 @@ def get_relationship_scores(
             follow_ups_by_contact[follow_up.contact_id].append(follow_up)
 
     recommendation_feedback_by_contact: dict[int, list[Feedback]] = {contact.id: [] for contact in contacts}
-    recommendation_types_by_contact: dict[int, set[str]] = {contact.id: set() for contact in contacts}
+    recommendation_contact_ids_by_type: dict[str, set[int]] = {}
     for recommendation in recommendations:
-        if recommendation.related_contact_id in recommendation_types_by_contact:
-            recommendation_types_by_contact[recommendation.related_contact_id].add(recommendation.recommendation_type)
+        if recommendation.related_contact_id in recommendation_feedback_by_contact:
+            recommendation_contact_ids_by_type.setdefault(recommendation.recommendation_type, set()).add(
+                recommendation.related_contact_id
+            )
     for feedback in feedback_entries:
-        for candidate_contact_id, recommendation_types in recommendation_types_by_contact.items():
-            if feedback.target_id in recommendation_types:
-                recommendation_feedback_by_contact[candidate_contact_id].append(feedback)
+        for candidate_contact_id in recommendation_contact_ids_by_type.get(feedback.target_id or "", set()):
+            recommendation_feedback_by_contact[candidate_contact_id].append(feedback)
 
     results: list[RelationshipScoreItem] = []
     for contact in contacts:
@@ -157,8 +161,8 @@ def get_relationship_scores(
         event_goal_matches = sum(
             1
             for interaction in contact_interactions
-            if interaction.event is not None
-            for goal in _split_csv(interaction.event.goals)
+            if interaction.event_id is not None and interaction.event_id in events_by_id
+            for goal in _split_csv(events_by_id[interaction.event_id].goals)
             if goal in profile_terms
         )
         duration_bonus = min(relationship_days / 120, 4)
@@ -213,7 +217,12 @@ def get_relationship_scores(
         )
 
     personalization_boosts = {
-        contact.id: get_relationship_personalization_boost(db, user_id, contact).personalization_boost
+        contact.id: get_relationship_personalization_boost(
+            db,
+            user_id,
+            contact,
+            state=personalization_state,
+        ).personalization_boost
         for contact in contacts
     }
     results.sort(
