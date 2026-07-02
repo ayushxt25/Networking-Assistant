@@ -5,6 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy.orm import Session
 
+from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
 from app.db_models import Contact, Event, Feedback, FollowUp, Interaction, UserProfile
 from app.services.cache_service import cache_key_for_user, get_cached_json, set_cached_json
 from app.services.ml_ranker_service import score_recommendation_with_ranker
@@ -189,6 +190,14 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
         days_until = _days_until(event.event_date, now)
         if days_until is not None and 0 <= days_until <= 7:
             goal_match = 10 if any(term.lower() in (event.goals or "").lower() for term in goal_terms) else 0
+            retrieval_matches = advanced_retrieve_relationship_intelligence(
+                db,
+                user_id,
+                event.title,
+                interests=list(goal_terms),
+                preferred_recommendation_type="prepare_for_upcoming_event",
+                top_k=2,
+            )
             recommendation_id = build_recommendation_id(
                 user_id,
                 "prepare_for_upcoming_event",
@@ -203,8 +212,15 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
                     recommendation_type="prepare_for_upcoming_event",
                     title=f"Prepare for upcoming event: {event.title}",
                     description=event.description or "Review goals and outreach targets before this event.",
-                    priority_score=70 - days_until + goal_match,
-                    reason=f"Event is coming up in {days_until} day(s).",
+                    priority_score=70 - days_until + goal_match + min(len(retrieval_matches) * 0.3, 0.6),
+                    reason=(
+                        f"Event is coming up in {days_until} day(s)."
+                        + (
+                            f" Advanced retrieval found {len(retrieval_matches)} relevant memory snippet(s)."
+                            if retrieval_matches
+                            else ""
+                        )
+                    ),
                     related_contact_id=None,
                     related_event_id=event.id,
                     related_follow_up_id=None,

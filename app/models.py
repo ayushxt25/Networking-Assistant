@@ -428,3 +428,23 @@ class PersonalizationProfileResponse(BaseModel):
     profile_completeness: float
     learning_status: str
     created_at: datetime
+
+
+class RetrievalScoreComponentsResponse(BaseModel):
+    semantic_similarity: float
+    relationship_weight: float
+    personalization_weight: float
+    graph_weight: float
+    recency_weight: float
+    feedback_weight: float
+
+
+class AdvancedRetrievalResultResponse(BaseModel):
+    id: str
+    entity_type: str
+    record_id: int
+    text: str
+    retrieval_score: float
+    components: RetrievalScoreComponentsResponse
+    reasons: List[str]
+    metadata: dict

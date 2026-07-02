@@ -3,6 +3,7 @@ from typing import List, Optional, Sequence
 
 from sqlalchemy.orm import Session
 
+from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
 from app.db_models import Contact, Event, FollowUp, Interaction, UserProfile
 from app.services.retrieval_quality_service import rerank_memory_results
 from app.services.semantic_memory_service import semantic_search_memories
@@ -48,6 +49,20 @@ def _load_semantic_memory_summary(
     query_text = _build_semantic_query(description, interests, themes)
     if not query_text:
         return []
+
+    try:
+        advanced_matches = advanced_retrieve_relationship_intelligence(
+            db=db,
+            user_id=user_id,
+            query_text=query_text,
+            interests=interests,
+            themes=themes,
+            top_k=3,
+        )
+        if advanced_matches:
+            return [match.text for match in advanced_matches]
+    except Exception:
+        pass
 
     try:
         semantic_matches = semantic_search_memories(

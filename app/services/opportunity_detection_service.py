@@ -5,13 +5,13 @@ from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy.orm import Session
 
+from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
 from app.db_models import Contact, Event, FollowUp, Interaction
 from app.services.analytics_service import get_analytics_summary
 from app.services.network_graph_service import get_network_graph_insights
 from app.services.personalization_service import get_opportunity_personalization_adjustment
 from app.services.recommendation_service import generate_recommendations
 from app.services.relationship_scoring_service import get_relationship_scores
-from app.services.semantic_memory_service import semantic_search_memories
 
 
 def _utcnow() -> datetime:
@@ -215,7 +215,13 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
     for event in events:
         days_until = _days_until(event.event_date, now)
         if days_until is not None and 0 <= days_until <= 7:
-            memory_hits = semantic_search_memories(db, event.title, user_id, top_k=2)
+            memory_hits = advanced_retrieve_relationship_intelligence(
+                db,
+                user_id,
+                event.title,
+                preferred_opportunity_type="prepare_for_upcoming_event",
+                top_k=2,
+            )
             add_opportunity(
                 "prepare_for_upcoming_event",
                 f"Prepare for upcoming event: {event.title}",
@@ -225,7 +231,7 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
                 0.88,
                 f"Event is in {days_until} day(s).",
                 "Set outreach goals and identify people to meet before the event.",
-                [f"days_until_event:{days_until}", f"semantic_memory_hits:{len(memory_hits)}"],
+                [f"days_until_event:{days_until}", f"advanced_memory_hits:{len(memory_hits)}"],
                 related_event_id=event.id,
             )
 
@@ -247,7 +253,13 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
             ),
             default=0,
         )
-        memory_hits = semantic_search_memories(db, contact.name, user_id, top_k=2)
+        memory_hits = advanced_retrieve_relationship_intelligence(
+            db,
+            user_id,
+            contact.name,
+            preferred_opportunity_type="activate_bridge_contact" if contact.id in bridge_ids else None,
+            top_k=2,
+        )
 
         if recency_days >= 30:
             add_opportunity(
@@ -287,7 +299,7 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
                 0.82,
                 "This contact bridges multiple companies, tags, roles, or events.",
                 "Reach out with a context-rich update or cross-network introduction idea.",
-                [f"bridge_contact:true", f"semantic_memory_hits:{len(memory_hits)}"],
+                [f"bridge_contact:true", f"advanced_memory_hits:{len(memory_hits)}"],
                 related_contact_id=contact.id,
             )
 
