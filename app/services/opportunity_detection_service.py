@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db_models import Contact, Event, FollowUp, Interaction
 from app.services.analytics_service import get_analytics_summary
 from app.services.network_graph_service import get_network_graph_insights
+from app.services.personalization_service import get_opportunity_personalization_adjustment
 from app.services.recommendation_service import generate_recommendations
 from app.services.relationship_scoring_service import get_relationship_scores
 from app.services.semantic_memory_service import semantic_search_memories
@@ -83,6 +84,8 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
     recommendations = generate_recommendations(db, user_id)
 
     score_by_contact = {item.contact_id: item for item in relationship_scores.scores}
+    contacts_by_id = {contact.id: contact for contact in contacts}
+    events_by_id = {event.id: event for event in events}
     bridge_ids = {item.contact_id for item in graph.bridge_contacts}
     weak_ids = {item.contact_id for item in graph.weak_tie_candidates}
     strategic_ids = {
@@ -128,6 +131,27 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
         if dedupe_key in seen:
             return
         seen.add(dedupe_key)
+        personalization = get_opportunity_personalization_adjustment(
+            db,
+            user_id,
+            opportunity_type,
+            contact=contacts_by_id.get(related_contact_id) if related_contact_id is not None else None,
+            event=events_by_id.get(related_event_id) if related_event_id is not None else None,
+            text=f"{title} {description}",
+        )
+        adjusted_priority = round(
+            _clamp(base_priority + personalization.personalization_boost, 0, 100),
+            1,
+        )
+        combined_reason = reason
+        if personalization.reason:
+            combined_reason = (
+                f"{reason} Personalization adjusted score by "
+                f"{personalization.personalization_boost:+.1f}: {'; '.join(personalization.reason)}."
+            )
+            supporting_signals = supporting_signals + [
+                f"personalization_boost:{personalization.personalization_boost:+.1f}"
+            ]
         opportunities.append(
             OpportunityItem(
                 opportunity_id=_opportunity_id(
@@ -140,10 +164,10 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
                 opportunity_type=opportunity_type,
                 title=title,
                 description=description,
-                priority_score=round(_clamp(base_priority, 0, 100), 1),
+                priority_score=adjusted_priority,
                 urgency=urgency,
                 confidence=round(_clamp(confidence, 0.0, 1.0), 2),
-                reason=reason,
+                reason=combined_reason,
                 related_contact_id=related_contact_id,
                 related_event_id=related_event_id,
                 related_follow_up_id=related_follow_up_id,
@@ -311,8 +335,7 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
                 related_contact_id=contact.id,
             )
 
-    if analytics.cold_contacts_count > 0:
-        opportunities.sort(key=lambda item: (-item.priority_score, item.opportunity_type, item.title.lower(), item.opportunity_id))
-    else:
-        opportunities.sort(key=lambda item: (-item.priority_score, item.opportunity_type, item.title.lower(), item.opportunity_id))
+    opportunities.sort(
+        key=lambda item: (-item.priority_score, item.opportunity_type, item.title.lower(), item.opportunity_id)
+    )
     return opportunities

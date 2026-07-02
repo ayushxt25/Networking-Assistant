@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db_models import Contact, Feedback, FollowUp, Interaction, UserProfile
 from app.services.network_graph_service import get_network_graph_insights
+from app.services.personalization_service import get_relationship_personalization_boost
 from app.services.recommendation_service import generate_recommendations
 
 
@@ -211,5 +212,16 @@ def get_relationship_scores(
             )
         )
 
-    results.sort(key=lambda item: (-item.score, item.name.lower(), item.contact_id))
+    personalization_boosts = {
+        contact.id: get_relationship_personalization_boost(db, user_id, contact).personalization_boost
+        for contact in contacts
+    }
+    results.sort(
+        key=lambda item: (
+            -(item.score + personalization_boosts.get(item.contact_id, 0.0)),
+            -item.score,
+            item.name.lower(),
+            item.contact_id,
+        )
+    )
     return RelationshipScoreList(scores=results, created_at=now)

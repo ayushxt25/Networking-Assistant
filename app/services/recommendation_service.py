@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db_models import Contact, Event, Feedback, FollowUp, Interaction, UserProfile
 from app.services.cache_service import cache_key_for_user, get_cached_json, set_cached_json
 from app.services.ml_ranker_service import score_recommendation_with_ranker
+from app.services.personalization_service import get_recommendation_personalization_adjustment
 
 
 def _utcnow() -> datetime:
@@ -313,6 +314,33 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
         recommendation.reason = f"{recommendation.reason} {feedback_reason}"
 
     for recommendation in recommendations:
+        contact = next(
+            (item for item in contacts if item.id == recommendation.related_contact_id),
+            None,
+        )
+        event = next(
+            (item for item in events if item.id == recommendation.related_event_id),
+            None,
+        )
+        personalization = get_recommendation_personalization_adjustment(
+            db,
+            user_id,
+            recommendation.recommendation_type,
+            contact=contact,
+            event=event,
+            text=f"{recommendation.title} {recommendation.description}",
+        )
+        personalization_boost = personalization.personalization_boost
+        if personalization_boost > 0:
+            personalization_boost = min(personalization_boost, max(0.0, 93.0 - recommendation.priority_score))
+        recommendation.priority_score += personalization_boost
+        if personalization.reason:
+            recommendation.reason = (
+                f"{recommendation.reason} Personalization adjusted score by "
+                f"{personalization_boost:+.1f}: {'; '.join(personalization.reason)}."
+            )
+
+    for recommendation in recommendations:
         blended_score, ml_reason = score_recommendation_with_ranker(
             user_id=user_id,
             recommendation_type=recommendation.recommendation_type,
@@ -326,7 +354,9 @@ def _generate_recommendations_uncached(db: Session, user_id: int) -> List[Recomm
         if ml_reason:
             recommendation.reason = f"{recommendation.reason} {ml_reason}"
 
-    recommendations.sort(key=lambda item: item.priority_score, reverse=True)
+    recommendations.sort(
+        key=lambda item: (-item.priority_score, item.recommendation_type, item.recommendation_id)
+    )
     return recommendations
 
 

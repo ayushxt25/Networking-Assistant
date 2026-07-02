@@ -415,3 +415,16 @@ class OpportunityResponse(BaseModel):
     recommended_action: str
     supporting_signals: List[str]
     created_at: datetime
+
+
+class PersonalizationProfileResponse(BaseModel):
+    preference_vector: dict[str, float]
+    preferred_opportunity_types: List[str]
+    preferred_contact_categories: List[str]
+    preferred_interaction_styles: List[str]
+    preferred_recommendation_categories: List[str]
+    top_preferences: List[str]
+    confidence_score: float
+    profile_completeness: float
+    learning_status: str
+    created_at: datetime
