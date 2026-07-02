@@ -128,3 +128,41 @@ def test_opportunities_user_isolation(client):
     response = client.get("/opportunities", headers=headers_b)
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_opportunity_lifecycle_endpoint_and_response_fields(client, auth_headers):
+    contact = client.post(
+        "/contacts",
+        json={"name": "Opp Lifecycle", "company": "Quiet", "role": "Advisor", "relationship_strength": 2},
+        headers=auth_headers,
+    ).json()
+
+    opportunity = next(
+        item
+        for item in client.get("/opportunities", headers=auth_headers).json()
+        if item["opportunity_type"] == "reconnect_with_cold_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
+    assert opportunity["lifecycle_status"] == "new"
+    assert opportunity["converted_follow_up_id"] is None
+
+    mutation = client.post(
+        "/action-lifecycle",
+        json={
+            "entity_kind": "opportunity",
+            "entity_id": opportunity["opportunity_id"],
+            "entity_type": opportunity["opportunity_type"],
+            "status": "dismissed",
+        },
+        headers=auth_headers,
+    )
+    assert mutation.status_code == 200
+    assert mutation.json()["status"] == "dismissed"
+
+    updated = next(
+        item
+        for item in client.get("/opportunities", headers=auth_headers).json()
+        if item["opportunity_id"] == opportunity["opportunity_id"]
+    )
+    assert updated["lifecycle_status"] == "dismissed"
+    assert updated["lifecycle_updated_at"] is not None

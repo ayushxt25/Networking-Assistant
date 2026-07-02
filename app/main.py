@@ -31,6 +31,7 @@ from app.config import get_cors_allowed_origins
 from app.database import init_db
 from app.rate_limit import limiter
 from app.routes.analytics import router as analytics_router
+from app.routes.action_lifecycle import router as action_lifecycle_router
 from app.routes.audit import router as audit_router
 from app.routes.auth import router as auth_router
 from app.routes.conversation import router as conversation_router
@@ -202,6 +203,7 @@ app.include_router(relationship_scores_router)
 app.include_router(opportunities_router)
 app.include_router(personalization_router)
 app.include_router(recommendations_router)
+app.include_router(action_lifecycle_router)
 app.include_router(retrieval_router)
 app.include_router(metrics_router)
 app.include_router(analytics_router)

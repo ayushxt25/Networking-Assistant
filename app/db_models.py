@@ -21,6 +21,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -47,6 +48,9 @@ class User(Base):
     )
     recommendation_impressions = relationship(
         "RecommendationImpression", back_populates="user", cascade="all, delete-orphan"
+    )
+    action_lifecycle_states = relationship(
+        "ActionLifecycleState", back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     contacts = relationship("Contact", back_populates="user", cascade="all, delete-orphan")
@@ -106,6 +110,31 @@ class RecommendationImpression(Base):
     created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     user = relationship("User", back_populates="recommendation_impressions")
+
+
+class ActionLifecycleState(Base):
+    __tablename__ = "action_lifecycle_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", "entity_kind", "entity_id", name="uq_action_lifecycle_user_kind_entity"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    entity_kind = Column(String(32), nullable=False, index=True)
+    entity_id = Column(String(128), nullable=False, index=True)
+    entity_type = Column(String(100), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="new", index=True)
+    converted_follow_up_id = Column(Integer, nullable=True, index=True)
+    notes = Column(Text, nullable=True)
+    first_seen_at = Column(DateTime, nullable=True, index=True)
+    last_seen_at = Column(DateTime, nullable=True, index=True)
+    accepted_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    user = relationship("User", back_populates="action_lifecycle_states")
 
 
 class AuditLog(Base):

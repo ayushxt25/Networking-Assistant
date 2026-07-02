@@ -8,11 +8,13 @@ from app.database import get_db
 from app.db_models import User
 from app.dependencies import get_current_user
 from app.models import (
+    ActionLifecycleStateResponse,
     RankerStatusResponse,
     RankerTrainResponse,
     RecommendationResponse,
     RecommendationTrainingDataResponse,
 )
+from app.services.action_lifecycle_service import merge_lifecycle_state
 from app.services.audit_logger import log_audit_event
 from app.services.ml_ranker_service import get_ranker_status, train_ranker
 from app.services.ranking_data_service import build_recommendation_training_data
@@ -32,7 +34,15 @@ def _serialize_recommendations(
     except Exception:
         db.rollback()
 
-    return [RecommendationResponse(**recommendation.__dict__) for recommendation in recommendations]
+    merged = merge_lifecycle_state(
+        db,
+        user_id,
+        "recommendation",
+        recommendations,
+        entity_id_field="recommendation_id",
+        entity_type_field="recommendation_type",
+    )
+    return [RecommendationResponse(**recommendation) for recommendation in merged]
 
 
 @router.get("/recommendations", response_model=List[RecommendationResponse])

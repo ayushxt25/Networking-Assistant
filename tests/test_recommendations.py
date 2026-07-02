@@ -425,6 +425,128 @@ def test_training_data_generated_from_impressions_and_feedback(client, auth_head
     assert row["has_contact"] is True
 
 
+def test_recommendation_lifecycle_endpoint_and_response_fields(client, auth_headers):
+    contact = client.post(
+        "/contacts",
+        json={"name": "Lifecycle", "company": "Orbit", "role": "Founder", "relationship_strength": 5},
+        headers=auth_headers,
+    ).json()
+    recommendation = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_type"] == "strengthen_high_value_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
+    assert recommendation["lifecycle_status"] == "new"
+    assert recommendation["converted_follow_up_id"] is None
+
+    mutation = client.post(
+        "/action-lifecycle",
+        json={
+            "entity_kind": "recommendation",
+            "entity_id": recommendation["recommendation_id"],
+            "entity_type": recommendation["recommendation_type"],
+            "status": "accepted",
+        },
+        headers=auth_headers,
+    )
+    assert mutation.status_code == 200
+    assert mutation.json()["status"] == "accepted"
+
+    updated = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_id"] == recommendation["recommendation_id"]
+    )
+    assert updated["lifecycle_status"] == "accepted"
+    assert updated["lifecycle_updated_at"] is not None
+
+
+def test_recommendation_lifecycle_is_user_isolated(client):
+    client.post("/auth/register", json={"username": "life_rec_a", "password": "passwordA123"})
+    token_a = client.post(
+        "/auth/login", json={"username": "life_rec_a", "password": "passwordA123"}
+    ).json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    client.post("/auth/register", json={"username": "life_rec_b", "password": "passwordB123"})
+    token_b = client.post(
+        "/auth/login", json={"username": "life_rec_b", "password": "passwordB123"}
+    ).json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    shared_id = "shared-rec-id"
+    response_a = client.post(
+        "/action-lifecycle",
+        json={
+            "entity_kind": "recommendation",
+            "entity_id": shared_id,
+            "entity_type": "strengthen_high_value_contact",
+            "status": "dismissed",
+        },
+        headers=headers_a,
+    )
+    assert response_a.status_code == 200
+
+    response_b = client.post(
+        "/action-lifecycle",
+        json={
+            "entity_kind": "recommendation",
+            "entity_id": shared_id,
+            "entity_type": "strengthen_high_value_contact",
+            "status": "accepted",
+        },
+        headers=headers_b,
+    )
+    assert response_b.status_code == 200
+    assert response_b.json()["status"] == "accepted"
+
+
+def test_feedback_tuning_still_works_with_lifecycle_state(client, auth_headers):
+    contact = client.post(
+        "/contacts",
+        json={"name": "Lifecycle Feedback", "company": "North", "role": "Founder", "relationship_strength": 5},
+        headers=auth_headers,
+    ).json()
+    recommendation = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_type"] == "strengthen_high_value_contact"
+        and item["related_contact_id"] == contact["id"]
+    )
+
+    lifecycle = client.post(
+        "/action-lifecycle",
+        json={
+            "entity_kind": "recommendation",
+            "entity_id": recommendation["recommendation_id"],
+            "entity_type": recommendation["recommendation_type"],
+            "status": "accepted",
+        },
+        headers=auth_headers,
+    )
+    assert lifecycle.status_code == 200
+
+    client.post(
+        "/feedback",
+        json={
+            "suggestion": "Helpful alongside lifecycle",
+            "category": "helpful",
+            "target_type": "recommendation",
+            "target_id": recommendation["recommendation_id"],
+        },
+        headers=auth_headers,
+    )
+
+    updated = next(
+        item
+        for item in client.get("/recommendations", headers=auth_headers).json()
+        if item["recommendation_id"] == recommendation["recommendation_id"]
+    )
+    assert updated["lifecycle_status"] == "accepted"
+    assert "Prior feedback signaled" in updated["reason"]
+
+
 def test_recommendation_training_data_empty_state(client, auth_headers):
     response = client.get("/recommendations/training-data", headers=auth_headers)
     assert response.status_code == 200

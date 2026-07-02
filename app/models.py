@@ -6,7 +6,7 @@ wrong type) and automatic documentation in the Swagger UI.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -259,6 +259,9 @@ class RecommendationResponse(BaseModel):
     related_contact_id: Optional[int] = None
     related_event_id: Optional[int] = None
     related_follow_up_id: Optional[int] = None
+    lifecycle_status: Optional[str] = None
+    converted_follow_up_id: Optional[int] = None
+    lifecycle_updated_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -412,9 +415,41 @@ class OpportunityResponse(BaseModel):
     related_contact_id: Optional[int] = None
     related_event_id: Optional[int] = None
     related_follow_up_id: Optional[int] = None
+    lifecycle_status: Optional[str] = None
+    converted_follow_up_id: Optional[int] = None
+    lifecycle_updated_at: Optional[datetime] = None
     recommended_action: str
     supporting_signals: List[str]
     created_at: datetime
+
+
+class ActionLifecycleMutationRequest(BaseModel):
+    entity_kind: Literal["recommendation", "opportunity"]
+    entity_id: str = Field(..., min_length=1, max_length=128)
+    entity_type: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    status: Literal["new", "accepted", "dismissed", "completed", "converted_to_follow_up"]
+    converted_follow_up_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class ActionLifecycleStateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    entity_kind: str
+    entity_id: str
+    entity_type: str
+    status: str
+    converted_follow_up_id: Optional[int] = None
+    notes: Optional[str] = None
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+    dismissed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PersonalizationProfileResponse(BaseModel):
