@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Navbar from "./components/Navbar";
+import DashboardLayout from "./layouts/DashboardLayout";
+import FollowUps from "./pages/FollowUps";
+import Events from "./pages/Events";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -9,15 +11,8 @@ import Generate from "./pages/Generate";
 import FactCheck from "./pages/FactCheck";
 import History from "./pages/History";
 import FeedbackHistory from "./pages/FeedbackHistory";
-
-function AppLayout({ children }) {
-  return (
-    <div className="min-h-screen bg-bg bg-mesh">
-      <Navbar />
-      {children}
-    </div>
-  );
-}
+import Contacts from "./pages/Contacts";
+import ContactProfile from "./pages/ContactProfile";
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
@@ -30,55 +25,22 @@ function AppRoutes() {
       />
 
       <Route
-        path="/dashboard"
         element={
           <ProtectedRoute>
-            <AppLayout>
-              <Dashboard />
-            </AppLayout>
+            <DashboardLayout />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/generate"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <Generate />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/fact-check"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <FactCheck />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/history"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <History />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/feedback-history"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <FeedbackHistory />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
+      >
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/contacts/:id" element={<ContactProfile />} />
+        <Route path="/generate" element={<Generate />} />
+        <Route path="/fact-check" element={<FactCheck />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/feedback-history" element={<FeedbackHistory />} />
+        <Route path="/follow-ups" element={<FollowUps />} />
+        <Route path="/events" element={<Events />} />
+      </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

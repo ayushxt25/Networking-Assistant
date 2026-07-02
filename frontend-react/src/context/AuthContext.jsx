@@ -1,10 +1,13 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { setUnauthorizedHandler } from "../api/client";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [username, setUsername] = useState(() => localStorage.getItem("username") || null);
   const [token, setToken] = useState(() => localStorage.getItem("access_token") || null);
+  const navigate = useNavigate();
 
   const login = useCallback((accessToken, user) => {
     localStorage.setItem("access_token", accessToken);
@@ -19,6 +22,13 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUsername(null);
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout();
+      navigate("/login", { replace: true });
+    });
+  }, [logout, navigate]);
 
   const isAuthenticated = Boolean(token);
 

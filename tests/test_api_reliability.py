@@ -134,3 +134,54 @@ def test_correlation_id_header_is_preserved(client):
     response = client.get("/health", headers={"X-Correlation-ID": "corr-test-123"})
     assert response.status_code == 200
     assert response.headers["X-Correlation-ID"] == "corr-test-123"
+
+
+def test_auth_login_cors_preflight_allows_local_frontend(client):
+    response = client.options(
+        "/auth/login",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,x-correlation-id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "POST" in response.headers["access-control-allow-methods"]
+    assert "OPTIONS" in response.headers["access-control-allow-methods"]
+    allowed_headers = response.headers["access-control-allow-headers"].lower()
+    assert "content-type" in allowed_headers
+    assert "x-correlation-id" in allowed_headers
+
+
+def test_recommendations_cors_preflight_allows_local_frontend(client):
+    response = client.options(
+        "/recommendations/next-best-actions",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,x-correlation-id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    allowed_headers = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed_headers
+    assert "x-correlation-id" in allowed_headers
+
+
+def test_relationship_scores_cors_preflight_allows_local_frontend(client):
+    response = client.options(
+        "/relationships/scores",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "GET" in response.headers["access-control-allow-methods"]

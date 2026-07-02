@@ -8,6 +8,10 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 DEFAULT_RANKER_MODEL_DIR = PROJECT_ROOT / "data" / "models"
+DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
 
 
 def get_database_url() -> str:
@@ -60,3 +64,10 @@ def get_cache_enabled() -> bool:
 
 def get_cache_ttl_seconds() -> int:
     return int(os.getenv("CACHE_TTL_SECONDS", "300"))
+
+
+def get_cors_allowed_origins() -> list[str]:
+    raw_value = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if raw_value.strip():
+        return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+    return list(DEFAULT_CORS_ALLOWED_ORIGINS)
