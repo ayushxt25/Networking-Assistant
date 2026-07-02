@@ -448,3 +448,38 @@ class AdvancedRetrievalResultResponse(BaseModel):
     components: RetrievalScoreComponentsResponse
     reasons: List[str]
     metadata: dict
+
+
+class MetricsUserRecommendationResponse(BaseModel):
+    acceptance_rate: float
+    rejection_rate: float
+    feedback_count: int
+
+
+class MetricsUserOpportunityResponse(BaseModel):
+    opportunity_conversion_rate: float
+    completed_follow_ups: int
+    tracked_follow_ups: int
+
+
+class MetricsUserEffectivenessResponse(BaseModel):
+    recommendations: MetricsUserRecommendationResponse
+    opportunities: MetricsUserOpportunityResponse
+
+
+class MetricsResponse(BaseModel):
+    uptime_seconds: float
+    started_at: datetime
+    api: dict
+    retrieval: dict
+    recommendations: dict
+    opportunities: dict
+    cache: dict
+    background_tasks: dict
+    service_health_snapshot: str
+    dependency_status: dict
+    user_effectiveness: Optional[MetricsUserEffectivenessResponse] = None
+
+
+class MetricsSummaryResponse(MetricsResponse):
+    summary: str

@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Optional, Sequence
 
 from sqlalchemy.orm import Session
 
 from app.db_models import Contact, Event, Feedback, FollowUp, Interaction
 from app.services.network_graph_service import get_network_graph_insights
+from app.services.metrics_service import get_metrics_service
 from app.services.personalization_service import get_personalization_profile
 from app.services.retrieval_quality_service import rerank_memory_results
 from app.services.semantic_memory_service import semantic_search_memories
@@ -121,6 +123,7 @@ def advanced_retrieve_relationship_intelligence(
     preferred_recommendation_type: Optional[str] = None,
     top_k: int = 3,
 ) -> list[AdvancedRetrievalResult]:
+    started = perf_counter()
     interests = interests or []
     themes = themes or []
     expanded_top_k = max(top_k * 3, 6)
@@ -142,6 +145,10 @@ def advanced_retrieve_relationship_intelligence(
         try:
             raw_results = semantic_search_memories(db=db, query_text=query_text, user_id=user_id, top_k=top_k)
         except Exception:
+            try:
+                get_metrics_service().record_retrieval((perf_counter() - started) * 1000.0, failed=True)
+            except Exception:
+                pass
             return []
         rerank_by_id = {}
 
@@ -316,4 +323,8 @@ def advanced_retrieve_relationship_intelligence(
         )
 
     ranked.sort(key=lambda item: (-item.retrieval_score, item.entity_type, item.id))
+    try:
+        get_metrics_service().record_retrieval((perf_counter() - started) * 1000.0, failed=False)
+    except Exception:
+        pass
     return ranked[:top_k]

@@ -12,6 +12,7 @@ without touching existing code -- a hub-and-spoke routing architecture.
 
 import contextvars
 import logging
+from time import perf_counter
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -32,6 +33,7 @@ from app.routes.analytics import router as analytics_router
 from app.routes.audit import router as audit_router
 from app.routes.auth import router as auth_router
 from app.routes.conversation import router as conversation_router
+from app.routes.metrics import router as metrics_router
 from app.routes.network import router as network_router
 from app.routes.opportunities import router as opportunities_router
 from app.routes.personalization import router as personalization_router
@@ -40,6 +42,7 @@ from app.routes.retrieval import router as retrieval_router
 from app.routes.relationship_data import router as relationship_data_router
 from app.routes.relationship_scores import router as relationship_scores_router
 from app.services.health_service import get_dependency_health
+from app.services.metrics_service import get_metrics_service
 
 correlation_id_var = contextvars.ContextVar("correlation_id", default="-")
 
@@ -121,12 +124,29 @@ async def correlation_id_middleware(request: Request, call_next):
     correlation_id = request.headers.get("X-Correlation-ID") or str(uuid4())
     token = correlation_id_var.set(correlation_id)
     request.state.correlation_id = correlation_id
+    started = perf_counter()
     try:
         response = await call_next(request)
     except Exception:
+        try:
+            get_metrics_service().record_api_request(
+                request.url.path,
+                (perf_counter() - started) * 1000.0,
+                500,
+            )
+        except Exception:
+            pass
         correlation_id_var.reset(token)
         raise
     response.headers["X-Correlation-ID"] = correlation_id
+    try:
+        get_metrics_service().record_api_request(
+            request.url.path,
+            (perf_counter() - started) * 1000.0,
+            response.status_code,
+        )
+    except Exception:
+        pass
     correlation_id_var.reset(token)
     return response
 
@@ -187,6 +207,7 @@ app.include_router(opportunities_router)
 app.include_router(personalization_router)
 app.include_router(recommendations_router)
 app.include_router(retrieval_router)
+app.include_router(metrics_router)
 app.include_router(analytics_router)
 app.include_router(audit_router)
 app.include_router(network_router)

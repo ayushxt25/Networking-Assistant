@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import get_celery_enabled
 from app.services.audit_logger import log_audit_event
 from app.services.cache_service import invalidate_user_cache
+from app.services.metrics_service import get_metrics_service
 from app.tasks import (
     refresh_user_analytics_task,
     refresh_user_recommendations_task,
@@ -31,6 +32,10 @@ def dispatch_optional_task(
     db: Session | None = None,
     **kwargs: Any,
 ) -> bool:
+    try:
+        get_metrics_service().record_task_dispatch()
+    except Exception:
+        pass
     log_audit_event(
         event_type="background_task_dispatch",
         status="attempted",
@@ -41,6 +46,10 @@ def dispatch_optional_task(
         db=db,
     )
     if not get_celery_enabled():
+        try:
+            get_metrics_service().record_task_dispatch_failure()
+        except Exception:
+            pass
         log_audit_event(
             event_type="background_task_dispatch",
             status="failed",
@@ -54,6 +63,10 @@ def dispatch_optional_task(
 
     task = TASK_REGISTRY.get(task_name)
     if task is None:
+        try:
+            get_metrics_service().record_task_dispatch_failure()
+        except Exception:
+            pass
         log_audit_event(
             event_type="background_task_dispatch",
             status="failed",
@@ -78,6 +91,10 @@ def dispatch_optional_task(
         )
         return True
     except Exception:
+        try:
+            get_metrics_service().record_task_dispatch_failure()
+        except Exception:
+            pass
         log_audit_event(
             event_type="background_task_dispatch",
             status="failed",

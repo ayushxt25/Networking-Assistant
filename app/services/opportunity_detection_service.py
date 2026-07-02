@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
 from app.db_models import Contact, Event, FollowUp, Interaction
 from app.services.analytics_service import get_analytics_summary
+from app.services.metrics_service import get_metrics_service
 from app.services.network_graph_service import get_network_graph_insights
 from app.services.personalization_service import get_opportunity_personalization_adjustment
 from app.services.recommendation_service import generate_recommendations
@@ -350,4 +351,8 @@ def detect_opportunities(db: Session, user_id: int) -> list[OpportunityItem]:
     opportunities.sort(
         key=lambda item: (-item.priority_score, item.opportunity_type, item.title.lower(), item.opportunity_id)
     )
+    try:
+        get_metrics_service().record_opportunity_generation(len(opportunities))
+    except Exception:
+        pass
     return opportunities

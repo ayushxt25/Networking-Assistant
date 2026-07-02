@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from app.config import get_cache_enabled, get_cache_ttl_seconds, get_redis_url
+from app.services.metrics_service import get_metrics_service
 
 
 class CacheBackend(Protocol):
@@ -125,8 +126,17 @@ def semantic_search_cache_key(user_id: int, query_text: str, top_k: int) -> str:
 
 def get_cached_json(key: str) -> Any | None:
     try:
-        return get_cache_backend().get(key)
+        value = get_cache_backend().get(key)
+        if value is None:
+            get_metrics_service().record_cache_miss()
+        else:
+            get_metrics_service().record_cache_hit()
+        return value
     except Exception:
+        try:
+            get_metrics_service().record_cache_miss()
+        except Exception:
+            pass
         return None
 
 

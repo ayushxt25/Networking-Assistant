@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.services.advanced_retrieval_service import advanced_retrieve_relationship_intelligence
 from app.db_models import Contact, Event, Feedback, FollowUp, Interaction, UserProfile
 from app.services.cache_service import cache_key_for_user, get_cached_json, set_cached_json
+from app.services.metrics_service import get_metrics_service
 from app.services.ml_ranker_service import score_recommendation_with_ranker
 from app.services.personalization_service import get_recommendation_personalization_adjustment
 
@@ -380,8 +381,17 @@ def generate_recommendations(db: Session, user_id: int) -> List[RecommendationIt
     cache_key = cache_key_for_user(user_id, "recommendations")
     cached = get_cached_json(cache_key)
     if cached is not None:
-        return [_deserialize_recommendation(item) for item in cached]
+        recommendations = [_deserialize_recommendation(item) for item in cached]
+        try:
+            get_metrics_service().record_recommendation_generation(len(recommendations))
+        except Exception:
+            pass
+        return recommendations
 
     recommendations = _generate_recommendations_uncached(db, user_id)
     set_cached_json(cache_key, [_serialize_recommendation(item) for item in recommendations])
+    try:
+        get_metrics_service().record_recommendation_generation(len(recommendations))
+    except Exception:
+        pass
     return recommendations
