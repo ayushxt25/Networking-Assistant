@@ -22,6 +22,7 @@ import { SkeletonCard, SkeletonLine } from "../components/ui/SkeletonLoader";
 import { useOnboardingStatus } from "../hooks/useOnboardingStatus";
 
 const CLOSED_FOLLOW_UP_STATUSES = new Set(["done", "completed", "complete", "closed"]);
+const HIDDEN_LIFECYCLE_STATUSES = new Set(["dismissed", "completed"]);
 
 function useDashboardSection(loader) {
   const [data, setData] = useState(null);
@@ -294,8 +295,12 @@ function Dashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
-  const recommendations = recommendationsSection.data || [];
-  const opportunities = (opportunitiesSection.data || []).slice(0, 4);
+  const recommendations = (recommendationsSection.data || []).filter(
+    (item) => !HIDDEN_LIFECYCLE_STATUSES.has((item.lifecycle_status || "new").toLowerCase())
+  );
+  const opportunities = (opportunitiesSection.data || [])
+    .filter((item) => !HIDDEN_LIFECYCLE_STATUSES.has((item.lifecycle_status || "new").toLowerCase()))
+    .slice(0, 4);
   const relationshipScores = relationshipScoresSection.data?.scores || [];
   const network = networkSection.data;
 

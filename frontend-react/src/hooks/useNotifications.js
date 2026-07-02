@@ -55,6 +55,7 @@ function buildItem({ id, type, title, subtitle, priority, href, dateValue }) {
     priority,
     href,
     dateValue,
+    lifecycleStatus: "new",
     sortTime: toTime(dateValue) ?? 0,
   };
 }
@@ -105,6 +106,8 @@ function deriveNotifications({ followUps, events, recommendations, opportunities
 
   for (const recommendation of recommendations) {
     if (Number(recommendation.priority_score || 0) < 75) continue;
+    const lifecycleStatus = recommendation.lifecycle_status || "new";
+    if (["dismissed", "completed"].includes(lifecycleStatus)) continue;
 
     items.push(
       buildItem({
@@ -115,12 +118,15 @@ function deriveNotifications({ followUps, events, recommendations, opportunities
         priority: Number(recommendation.priority_score || 0),
         href: recommendation.related_contact_id ? `/contacts/${recommendation.related_contact_id}` : "/recommendations",
         dateValue: recommendation.created_at,
+        lifecycleStatus,
       })
     );
   }
 
   for (const opportunity of opportunities) {
     if (Number(opportunity.priority_score || 0) < 75) continue;
+    const lifecycleStatus = opportunity.lifecycle_status || "new";
+    if (["dismissed", "completed"].includes(lifecycleStatus)) continue;
 
     items.push(
       buildItem({
@@ -131,6 +137,7 @@ function deriveNotifications({ followUps, events, recommendations, opportunities
         priority: Number(opportunity.priority_score || 0),
         href: opportunity.related_contact_id ? `/contacts/${opportunity.related_contact_id}` : "/opportunities",
         dateValue: opportunity.created_at,
+        lifecycleStatus,
       })
     );
   }

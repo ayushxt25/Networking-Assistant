@@ -188,4 +188,8 @@ export const api = {
   personalization: {
     profile: () => request("/personalization/profile", { method: "GET" }),
   },
+
+  actionLifecycle: {
+    update: (body) => request("/action-lifecycle", { method: "POST", body }),
+  },
 };

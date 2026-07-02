@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
+  BadgeCheck,
   ArrowUpDown,
   CheckCircle2,
   Filter,
@@ -48,6 +49,14 @@ function getRecommendationSection(type) {
   return "Next Best Actions";
 }
 
+function getLifecycleTone(status) {
+  if (status === "accepted") return "text-emerald-300 bg-emerald-500/10 border-emerald-500/20";
+  if (status === "dismissed") return "text-red-300 bg-red-500/10 border-red-500/20";
+  if (status === "completed") return "text-sky-300 bg-sky-500/10 border-sky-500/20";
+  if (status === "converted_to_follow_up") return "text-violet-300 bg-violet-500/10 border-violet-500/20";
+  return "text-white/55 bg-white/5 border-white/10";
+}
+
 function getInferredStatus(item, followUpMap) {
   if (!item.related_follow_up_id) return "No linked follow-up";
   const followUp = followUpMap.get(item.related_follow_up_id);
@@ -59,12 +68,15 @@ function RecommendationCard({
   item,
   contactName,
   relationshipScore,
-  statusLabel,
+  lifecycleStatus,
+  followUpStatusLabel,
+  onAccept,
   onOpenContact,
   onDismiss,
   onComplete,
   onConvert,
   onGenerate,
+  accepting,
   dismissing,
   completing,
 }) {
@@ -90,7 +102,10 @@ function RecommendationCard({
               {item.recommendation_type.replaceAll("_", " ")}
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/50">
-              {statusLabel}
+              {followUpStatusLabel}
+            </span>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getLifecycleTone(lifecycleStatus)}`}>
+              {lifecycleStatus.replaceAll("_", " ")}
             </span>
           </div>
 
@@ -122,6 +137,19 @@ function RecommendationCard({
         >
           <Sparkles className="h-4 w-4" />
           Generate prep
+        </button>
+
+        <button
+          onClick={() => onAccept(item)}
+          disabled={accepting}
+          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+            accepting
+              ? "border-white/10 bg-white/5 text-white/35"
+              : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+          }`}
+        >
+          <BadgeCheck className="h-4 w-4" />
+          {accepting ? "Saving..." : "Accept"}
         </button>
 
         <button
@@ -178,6 +206,7 @@ export default function Recommendations() {
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("priority_desc");
+  const [acceptingId, setAcceptingId] = useState(null);
   const [dismissingId, setDismissingId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
@@ -222,7 +251,8 @@ export default function Recommendations() {
           item.related_contact_id && scoreMap.has(item.related_contact_id)
             ? scoreMap.get(item.related_contact_id).score
             : null,
-        inferredStatus: getInferredStatus(item, followUpMap),
+        lifecycleStatus: item.lifecycle_status || "new",
+        followUpStatusLabel: getInferredStatus(item, followUpMap),
       })),
     [contactMap, followUpMap, recommendations, scoreMap]
   );
@@ -253,7 +283,11 @@ export default function Recommendations() {
     }
 
     if (statusFilter) {
-      items = items.filter((item) => item.inferredStatus.toLowerCase().includes(statusFilter.toLowerCase()));
+      items = items.filter((item) =>
+        [item.lifecycleStatus, item.followUpStatusLabel]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(statusFilter.toLowerCase()))
+      );
     }
 
     items.sort((a, b) => {
@@ -277,7 +311,9 @@ export default function Recommendations() {
 
   const groupedSections = useMemo(
     () => ({
-      "Next Best Actions": filteredRecommendations.slice(0, 5),
+      "Next Best Actions": filteredRecommendations
+        .filter((item) => !["dismissed", "completed"].includes(item.lifecycleStatus))
+        .slice(0, 5),
       "Recommended Follow-ups": filteredRecommendations.filter((item) => item.section === "Recommended Follow-ups"),
       "Relationship Recovery Suggestions": filteredRecommendations.filter(
         (item) => item.section === "Relationship Recovery Suggestions"
@@ -292,11 +328,11 @@ export default function Recommendations() {
   async function handleDismiss(item) {
     setDismissingId(item.recommendation_id);
     try {
-      await api.submitFeedback({
-        suggestion: item.title,
-        category: "dismissed",
-        target_type: "recommendation",
-        target_id: item.recommendation_id,
+      await api.actionLifecycle.update({
+        entity_kind: "recommendation",
+        entity_id: item.recommendation_id,
+        entity_type: item.recommendation_type,
+        status: "dismissed",
         notes: item.reason,
       });
       await loadData();
@@ -305,19 +341,44 @@ export default function Recommendations() {
     }
   }
 
+  async function handleAccept(item) {
+    setAcceptingId(item.recommendation_id);
+    try {
+      await api.actionLifecycle.update({
+        entity_kind: "recommendation",
+        entity_id: item.recommendation_id,
+        entity_type: item.recommendation_type,
+        status: "accepted",
+        notes: item.reason,
+      });
+      await loadData();
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
   async function handleComplete(item) {
-    if (!item.related_follow_up_id) return;
-    const followUp = followUpMap.get(item.related_follow_up_id);
-    if (!followUp) return;
     setCompletingId(item.recommendation_id);
     try {
-      await api.followUps.update(item.related_follow_up_id, {
-        title: followUp.title,
-        description: followUp.description,
-        due_date: followUp.due_date,
-        contact_id: followUp.contact_id,
-        event_id: followUp.event_id,
+      if (item.related_follow_up_id) {
+        const followUp = followUpMap.get(item.related_follow_up_id);
+        if (followUp) {
+          await api.followUps.update(item.related_follow_up_id, {
+            title: followUp.title,
+            description: followUp.description,
+            due_date: followUp.due_date,
+            contact_id: followUp.contact_id,
+            event_id: followUp.event_id,
+            status: "completed",
+          });
+        }
+      }
+      await api.actionLifecycle.update({
+        entity_kind: "recommendation",
+        entity_id: item.recommendation_id,
+        entity_type: item.recommendation_type,
         status: "completed",
+        notes: item.reason,
       });
       await loadData();
     } finally {
@@ -349,7 +410,15 @@ export default function Recommendations() {
     if (!followUpTarget) return;
     setSubmittingFollowUp(true);
     try {
-      await api.followUps.create(payload);
+      const created = await api.followUps.create(payload);
+      await api.actionLifecycle.update({
+        entity_kind: "recommendation",
+        entity_id: followUpTarget.recommendation_id,
+        entity_type: followUpTarget.recommendation_type,
+        status: "converted_to_follow_up",
+        converted_follow_up_id: created.id,
+        notes: followUpTarget.reason,
+      });
       setFollowUpTarget(null);
       await loadData();
     } finally {
@@ -478,6 +547,10 @@ export default function Recommendations() {
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-accent/50"
           >
             <option value="">All statuses</option>
+            <option value="accepted">Accepted</option>
+            <option value="dismissed">Dismissed</option>
+            <option value="completed">Completed</option>
+            <option value="converted_to_follow_up">Converted to follow-up</option>
             <option value="completed">Completed follow-up</option>
             <option value="pending">Pending follow-up</option>
             <option value="No linked follow-up">No linked follow-up</option>
@@ -533,12 +606,15 @@ export default function Recommendations() {
                       item={item}
                       contactName={item.contactName}
                       relationshipScore={item.relationshipScore}
-                      statusLabel={item.inferredStatus}
+                      lifecycleStatus={item.lifecycleStatus}
+                      followUpStatusLabel={item.followUpStatusLabel}
+                      onAccept={handleAccept}
                       onOpenContact={(contactId) => navigate(`/contacts/${contactId}`)}
                       onDismiss={handleDismiss}
                       onComplete={handleComplete}
                       onConvert={setFollowUpTarget}
                       onGenerate={handleGenerate}
+                      accepting={acceptingId === item.recommendation_id}
                       dismissing={dismissingId === item.recommendation_id}
                       completing={completingId === item.recommendation_id}
                     />
@@ -556,9 +632,9 @@ export default function Recommendations() {
           <h2 className="text-base font-semibold text-white">Backend-backed action model</h2>
         </div>
         <p className="text-sm text-white/55 max-w-3xl">
-          Dismiss uses the real feedback endpoint with recommendation IDs. Completion is only available when a
-          recommendation is already tied to a real follow-up. There is no backend recommendation status mutation API,
-          so status filtering is inferred from linked follow-up records where possible.
+          Recommendation lifecycle now uses the backend action lifecycle API. Follow-up conversion still uses the
+          existing create-follow-up flow first, then updates lifecycle state separately because there is no atomic
+          backend conversion endpoint yet.
         </p>
       </section>
 

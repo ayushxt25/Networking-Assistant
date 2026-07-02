@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
+  BadgeCheck,
   ArrowUpDown,
   CalendarClock,
+  CheckCircle2,
+  MessageSquareX,
   Plus,
   Search,
   Sparkles,
@@ -33,6 +36,14 @@ function priorityTone(score) {
   return "text-emerald-300 bg-emerald-500/10 border-emerald-500/20";
 }
 
+function getLifecycleTone(status) {
+  if (status === "accepted") return "text-emerald-300 bg-emerald-500/10 border-emerald-500/20";
+  if (status === "dismissed") return "text-red-300 bg-red-500/10 border-red-500/20";
+  if (status === "completed") return "text-sky-300 bg-sky-500/10 border-sky-500/20";
+  if (status === "converted_to_follow_up") return "text-violet-300 bg-violet-500/10 border-violet-500/20";
+  return "text-white/55 bg-white/5 border-white/10";
+}
+
 function getOpportunitySection(type) {
   if (type === "activate_bridge_contact") return "Warm introductions";
   if (["reconnect_with_cold_contact", "revive_weak_tie"].includes(type)) return "Reconnection opportunities";
@@ -53,11 +64,16 @@ function OpportunityCard({
   item,
   contactName,
   relationshipScore,
-  statusLabel,
+  lifecycleStatus,
+  followUpStatusLabel,
+  onAccept,
   onOpenContact,
+  onDismiss,
   onComplete,
   onConvert,
   onGenerate,
+  accepting,
+  dismissing,
   completing,
 }) {
   return (
@@ -85,7 +101,10 @@ function OpportunityCard({
               {item.urgency} urgency
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/50">
-              {statusLabel}
+              {followUpStatusLabel}
+            </span>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getLifecycleTone(lifecycleStatus)}`}>
+              {lifecycleStatus.replaceAll("_", " ")}
             </span>
           </div>
 
@@ -122,6 +141,19 @@ function OpportunityCard({
         </button>
 
         <button
+          onClick={() => onAccept(item)}
+          disabled={accepting}
+          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+            accepting
+              ? "border-white/10 bg-white/5 text-white/35"
+              : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+          }`}
+        >
+          <BadgeCheck className="h-4 w-4" />
+          {accepting ? "Saving..." : "Accept"}
+        </button>
+
+        <button
           onClick={() => onConvert(item)}
           className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
         >
@@ -139,9 +171,23 @@ function OpportunityCard({
                 : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
             }`}
           >
+            <CheckCircle2 className="h-4 w-4" />
             {completing ? "Saving..." : "Mark completed"}
           </button>
         ) : null}
+
+        <button
+          onClick={() => onDismiss(item)}
+          disabled={dismissing}
+          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+            dismissing
+              ? "border-white/10 bg-white/5 text-white/35"
+              : "border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/15"
+          }`}
+        >
+          <MessageSquareX className="h-4 w-4" />
+          {dismissing ? "Saving..." : "Dismiss"}
+        </button>
       </div>
     </motion.div>
   );
@@ -161,6 +207,8 @@ export default function Opportunities() {
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("priority_desc");
+  const [acceptingId, setAcceptingId] = useState(null);
+  const [dismissingId, setDismissingId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false);
@@ -204,7 +252,8 @@ export default function Opportunities() {
           item.related_contact_id && scoreMap.has(item.related_contact_id)
             ? scoreMap.get(item.related_contact_id).score
             : null,
-        inferredStatus: inferredStatus(item, followUpMap),
+        lifecycleStatus: item.lifecycle_status || "new",
+        followUpStatusLabel: inferredStatus(item, followUpMap),
       })),
     [contactMap, followUpMap, opportunities, scoreMap]
   );
@@ -238,7 +287,11 @@ export default function Opportunities() {
       items = items.filter((item) => item.priority_score >= Number(priorityFilter));
     }
     if (statusFilter) {
-      items = items.filter((item) => item.inferredStatus.toLowerCase().includes(statusFilter.toLowerCase()));
+      items = items.filter((item) =>
+        [item.lifecycleStatus, item.followUpStatusLabel]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(statusFilter.toLowerCase()))
+      );
     }
 
     items.sort((a, b) => {
@@ -264,7 +317,9 @@ export default function Opportunities() {
 
   const groupedSections = useMemo(
     () => ({
-      "Priority opportunities": filteredOpportunities.slice(0, 5),
+      "Priority opportunities": filteredOpportunities
+        .filter((item) => !["dismissed", "completed"].includes(item.lifecycleStatus))
+        .slice(0, 5),
       "Warm introductions": filteredOpportunities.filter((item) => item.section === "Warm introductions"),
       "Reconnection opportunities": filteredOpportunities.filter(
         (item) => item.section === "Reconnection opportunities"
@@ -279,19 +334,60 @@ export default function Opportunities() {
     [filteredOpportunities]
   );
 
+  async function handleAccept(item) {
+    setAcceptingId(item.opportunity_id);
+    try {
+      await api.actionLifecycle.update({
+        entity_kind: "opportunity",
+        entity_id: item.opportunity_id,
+        entity_type: item.opportunity_type,
+        status: "accepted",
+        notes: item.reason,
+      });
+      await loadData();
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
+  async function handleDismiss(item) {
+    setDismissingId(item.opportunity_id);
+    try {
+      await api.actionLifecycle.update({
+        entity_kind: "opportunity",
+        entity_id: item.opportunity_id,
+        entity_type: item.opportunity_type,
+        status: "dismissed",
+        notes: item.reason,
+      });
+      await loadData();
+    } finally {
+      setDismissingId(null);
+    }
+  }
+
   async function handleComplete(item) {
-    if (!item.related_follow_up_id) return;
-    const followUp = followUpMap.get(item.related_follow_up_id);
-    if (!followUp) return;
     setCompletingId(item.opportunity_id);
     try {
-      await api.followUps.update(item.related_follow_up_id, {
-        title: followUp.title,
-        description: followUp.description,
-        due_date: followUp.due_date,
-        contact_id: followUp.contact_id,
-        event_id: followUp.event_id,
+      if (item.related_follow_up_id) {
+        const followUp = followUpMap.get(item.related_follow_up_id);
+        if (followUp) {
+          await api.followUps.update(item.related_follow_up_id, {
+            title: followUp.title,
+            description: followUp.description,
+            due_date: followUp.due_date,
+            contact_id: followUp.contact_id,
+            event_id: followUp.event_id,
+            status: "completed",
+          });
+        }
+      }
+      await api.actionLifecycle.update({
+        entity_kind: "opportunity",
+        entity_id: item.opportunity_id,
+        entity_type: item.opportunity_type,
         status: "completed",
+        notes: item.reason,
       });
       await loadData();
     } finally {
@@ -322,7 +418,15 @@ export default function Opportunities() {
   async function handleConvertToFollowUp(payload) {
     setSubmittingFollowUp(true);
     try {
-      await api.followUps.create(payload);
+      const created = await api.followUps.create(payload);
+      await api.actionLifecycle.update({
+        entity_kind: "opportunity",
+        entity_id: followUpTarget.opportunity_id,
+        entity_type: followUpTarget.opportunity_type,
+        status: "converted_to_follow_up",
+        converted_follow_up_id: created.id,
+        notes: followUpTarget.reason,
+      });
       setFollowUpTarget(null);
       await loadData();
     } finally {
@@ -450,6 +554,10 @@ export default function Opportunities() {
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-accent/50"
           >
             <option value="">All statuses</option>
+            <option value="accepted">Accepted</option>
+            <option value="dismissed">Dismissed</option>
+            <option value="completed">Completed</option>
+            <option value="converted_to_follow_up">Converted to follow-up</option>
             <option value="completed">Completed follow-up</option>
             <option value="pending">Pending follow-up</option>
             <option value="No linked follow-up">No linked follow-up</option>
@@ -505,11 +613,16 @@ export default function Opportunities() {
                       item={item}
                       contactName={item.contactName}
                       relationshipScore={item.relationshipScore}
-                      statusLabel={item.inferredStatus}
+                      lifecycleStatus={item.lifecycleStatus}
+                      followUpStatusLabel={item.followUpStatusLabel}
+                      onAccept={handleAccept}
                       onOpenContact={(contactId) => navigate(`/contacts/${contactId}`)}
+                      onDismiss={handleDismiss}
                       onComplete={handleComplete}
                       onConvert={setFollowUpTarget}
                       onGenerate={handleGenerate}
+                      accepting={acceptingId === item.opportunity_id}
+                      dismissing={dismissingId === item.opportunity_id}
                       completing={completingId === item.opportunity_id}
                     />
                   ))}
@@ -526,9 +639,9 @@ export default function Opportunities() {
           <h2 className="text-base font-semibold text-white">Backend limitations</h2>
         </div>
         <p className="text-sm text-white/55 max-w-3xl">
-          Opportunities do not currently have a dedicated dismiss or completion mutation endpoint. This page only
-          exposes actions backed by existing capabilities: open related contact, convert to follow-up, generate prep,
-          and mark a linked follow-up completed when one actually exists.
+          Opportunity lifecycle now uses the backend action lifecycle API. Follow-up conversion still uses the
+          existing create-follow-up flow first, then updates lifecycle state separately because there is no atomic
+          backend conversion endpoint yet.
         </p>
       </section>
 
