@@ -410,17 +410,31 @@ export default function Recommendations() {
     if (!followUpTarget) return;
     setSubmittingFollowUp(true);
     try {
-      const created = await api.followUps.create(payload);
-      await api.actionLifecycle.update({
+      const result = await api.actionLifecycle.convertToFollowUp({
         entity_kind: "recommendation",
         entity_id: followUpTarget.recommendation_id,
         entity_type: followUpTarget.recommendation_type,
-        status: "converted_to_follow_up",
-        converted_follow_up_id: created.id,
+        ...payload,
         notes: followUpTarget.reason,
       });
+      setFollowUps((current) => {
+        const next = current.filter((followUp) => followUp.id !== result.follow_up.id);
+        return [...next, result.follow_up];
+      });
+      setRecommendations((current) =>
+        current.map((item) =>
+          item.recommendation_id === followUpTarget.recommendation_id
+            ? {
+                ...item,
+                lifecycle_status: result.lifecycle_state.status,
+                converted_follow_up_id: result.converted_follow_up_id,
+                lifecycle_updated_at: result.lifecycle_state.updated_at,
+                related_follow_up_id: result.converted_follow_up_id,
+              }
+            : item
+        )
+      );
       setFollowUpTarget(null);
-      await loadData();
     } finally {
       setSubmittingFollowUp(false);
     }
@@ -632,9 +646,8 @@ export default function Recommendations() {
           <h2 className="text-base font-semibold text-white">Backend-backed action model</h2>
         </div>
         <p className="text-sm text-white/55 max-w-3xl">
-          Recommendation lifecycle now uses the backend action lifecycle API. Follow-up conversion still uses the
-          existing create-follow-up flow first, then updates lifecycle state separately because there is no atomic
-          backend conversion endpoint yet.
+          Recommendation lifecycle uses the backend action lifecycle API, and follow-up conversion now uses the atomic
+          backend conversion endpoint so the follow-up record and lifecycle state stay in sync.
         </p>
       </section>
 

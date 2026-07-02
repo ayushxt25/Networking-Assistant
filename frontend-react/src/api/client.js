@@ -191,5 +191,7 @@ export const api = {
 
   actionLifecycle: {
     update: (body) => request("/action-lifecycle", { method: "POST", body }),
+    convertToFollowUp: (body) =>
+      request("/action-lifecycle/convert-to-follow-up", { method: "POST", body }),
   },
 };
