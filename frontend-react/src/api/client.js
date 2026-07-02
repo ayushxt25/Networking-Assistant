@@ -159,6 +159,11 @@ export const api = {
     summary: () => request("/analytics/summary", { method: "GET" }),
   },
 
+  metrics: {
+    get: () => request("/metrics", { method: "GET" }),
+    summary: () => request("/metrics/summary", { method: "GET" }),
+  },
+
   personalization: {
     profile: () => request("/personalization/profile", { method: "GET" }),
   },

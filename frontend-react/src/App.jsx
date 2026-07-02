@@ -6,6 +6,8 @@ import FollowUps from "./pages/FollowUps";
 import Events from "./pages/Events";
 import Recommendations from "./pages/Recommendations";
 import Opportunities from "./pages/Opportunities";
+import RelationshipScores from "./pages/RelationshipScores";
+import Analytics from "./pages/Analytics";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -44,6 +46,8 @@ function AppRoutes() {
         <Route path="/events" element={<Events />} />
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/opportunities" element={<Opportunities />} />
+        <Route path="/relationship-scores" element={<RelationshipScores />} />
+        <Route path="/analytics" element={<Analytics />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
