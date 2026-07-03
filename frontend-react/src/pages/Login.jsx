@@ -6,29 +6,37 @@ import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import Button from "../components/Button";
 import GlassCard from "../components/GlassCard";
+import { getAuthProvider, isSupabaseAuthProvider } from "../lib/authProvider";
 
 export default function Login() {
   const [mode, setMode] = useState("login");
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const navigate = useNavigate();
+  const isSupabaseMode = isSupabaseAuthProvider();
+  const identifierLabel = isSupabaseMode ? "Email" : "Username";
+  const providerTitle = getAuthProvider() === "supabase" ? "Supabase Auth" : "Legacy Auth";
 
   async function handleLogin(e) {
     e.preventDefault();
     setError("");
-    if (!username || !password) {
-      setError("Please enter both a username and password.");
+    if (!identifier || !password) {
+      setError(`Please enter both a ${identifierLabel.toLowerCase()} and password.`);
       return;
     }
     setLoading(true);
     try {
-      const data = await api.login(username, password);
-      login(data.access_token, username);
+      if (isSupabaseMode) {
+        await login(identifier, password);
+      } else {
+        const data = await api.login(identifier, password);
+        await login(data.access_token, identifier);
+      }
       navigate("/onboarding", { replace: true, state: { fromAuth: true } });
     } catch (err) {
       setError(err.message || "Login failed.");
@@ -41,8 +49,8 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!username || !password) {
-      setError("Please enter both a username and password.");
+    if (!identifier || !password) {
+      setError(`Please enter both a ${identifierLabel.toLowerCase()} and password.`);
       return;
     }
     if (password.length < 8) {
@@ -51,8 +59,12 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await api.register(username, password);
-      setSuccess("Account created! You can now log in.");
+      await register(identifier, password);
+      setSuccess(
+        isSupabaseMode
+          ? "Account created! Check your email if confirmation is required, then log in."
+          : "Account created! You can now log in."
+      );
       setMode("login");
       setPassword("");
     } catch (err) {
@@ -78,6 +90,7 @@ export default function Login() {
             Networking<span className="gradient-text">Assistant</span>
           </h1>
           <p className="text-white/50 text-sm mt-1">Your AI-powered networking companion</p>
+          <p className="text-white/35 text-xs mt-2 uppercase tracking-[0.2em]">{providerTitle}</p>
         </div>
 
         <GlassCard className="!p-8">
@@ -123,15 +136,15 @@ export default function Login() {
 
           <form onSubmit={mode === "login" ? handleLogin : handleRegister} className="space-y-4">
             <div>
-              <label className="block text-sm text-white/60 mb-1.5">Username</label>
+              <label className="block text-sm text-white/60 mb-1.5">{identifierLabel}</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  type={isSupabaseMode ? "email" : "text"}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="w-full bg-bg-secondary border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50"
-                  placeholder="your username"
+                  placeholder={isSupabaseMode ? "you@example.com" : "your username"}
                 />
               </div>
             </div>
@@ -147,7 +160,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-bg-secondary border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50"
-                  placeholder="••••••••"
+                  placeholder="********"
                 />
               </div>
             </div>

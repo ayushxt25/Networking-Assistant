@@ -1,3 +1,6 @@
+import { isSupabaseAuthProvider } from "../lib/authProvider";
+import { getSupabaseAccessToken } from "../lib/supabaseClient";
+
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 function getToken() {
@@ -16,7 +19,7 @@ async function request(path, { method = "GET", body, auth = true, timeout = 3000
 
   const headers = { "Content-Type": "application/json" };
   if (auth) {
-    const token = getToken();
+    const token = isSupabaseAuthProvider() ? await getSupabaseAccessToken() : getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
 
