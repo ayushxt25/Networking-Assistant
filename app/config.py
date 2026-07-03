@@ -78,6 +78,13 @@ def get_supabase_url() -> str | None:
     return value or None
 
 
+def get_supabase_jwks_url() -> str | None:
+    base_url = get_supabase_url()
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+
+
 def get_supabase_jwt_secret() -> str | None:
     value = os.getenv("SUPABASE_JWT_SECRET", "").strip()
     return value or None

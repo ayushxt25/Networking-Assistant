@@ -12,7 +12,8 @@ from app.config import (
 from app.db_models import User
 from app.dependencies import get_current_user
 from app.roles import coerce_user_role, normalize_user_role
-from app.supabase_auth import SupabaseJWTClaims
+from app.supabase_auth import SupabaseJWTClaims, verify_supabase_jwt
+from jose import jwt
 
 
 def test_register_new_user_succeeds(client):
@@ -154,3 +155,43 @@ def test_supabase_user_resolution_reuses_existing_local_user(db_session, monkeyp
 def test_role_normalization_and_invalid_role_fallback():
     assert normalize_user_role("ADMIN") == "admin"
     assert coerce_user_role("superadmin") == "user"
+
+
+def test_verify_supabase_jwt_supports_hs256_shared_secret(monkeypatch):
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "supabase-secret")
+    monkeypatch.setenv("SUPABASE_AUDIENCE", "authenticated")
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+
+    token = jwt.encode(
+        {
+            "sub": "supabase-user-789",
+            "aud": "authenticated",
+            "email": "ava@example.com",
+            "app_metadata": {"role": "admin"},
+        },
+        "supabase-secret",
+        algorithm="HS256",
+    )
+
+    claims = verify_supabase_jwt(token)
+    assert claims is not None
+    assert claims.supabase_user_id == "supabase-user-789"
+    assert claims.email == "ava@example.com"
+    assert claims.role == "admin"
+
+
+def test_verify_supabase_jwt_can_fall_back_to_jwks(monkeypatch):
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "https://demo.supabase.co")
+    monkeypatch.setenv("SUPABASE_AUDIENCE", "authenticated")
+    monkeypatch.setattr(
+        "app.supabase_auth._decode_with_jwks",
+        lambda token: {"sub": "jwks-user", "aud": "authenticated", "email": "jwks@example.com"},
+    )
+
+    token = jwt.encode({"sub": "ignored", "aud": "authenticated"}, "temporary", algorithm="HS256")
+    claims = verify_supabase_jwt(token)
+    assert claims is not None
+    assert claims.supabase_user_id == "jwks-user"
+    assert claims.email == "jwks@example.com"
+    assert claims.role == "user"

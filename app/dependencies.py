@@ -19,6 +19,7 @@ To try protected endpoints interactively, log in via POST /auth/login
 into Swagger's Authorize dialog directly instead.
 """
 
+import logging
 import re
 
 from fastapi import Depends, HTTPException, status
@@ -31,6 +32,8 @@ from app.database import get_db
 from app.db_models import User
 from app.roles import coerce_user_role
 from app.supabase_auth import SupabaseJWTClaims, verify_supabase_jwt
+
+logger = logging.getLogger("networking_assistant")
 
 # tokenUrl points at the login endpoint; this only affects the auto-generated
 # Swagger UI's "Authorize" button, not runtime behavior.
@@ -77,6 +80,7 @@ def _get_or_create_supabase_user(claims: SupabaseJWTClaims, db: Session) -> User
             user.role = coerce_user_role(claims.role)
             db.commit()
             db.refresh(user)
+        logger.info("Supabase auth reused local user for sub=%s", claims.supabase_user_id)
         return user
 
     username = _next_available_username(
@@ -92,13 +96,16 @@ def _get_or_create_supabase_user(claims: SupabaseJWTClaims, db: Session) -> User
     db.add(user)
     db.commit()
     db.refresh(user)
+    logger.info("Supabase auth created local user for sub=%s username=%s", claims.supabase_user_id, user.username)
     return user
 
 
 def _get_supabase_user(token: str, db: Session) -> User | None:
     claims = verify_supabase_jwt(token)
     if claims is None:
+        logger.warning("Supabase auth verification failed or returned no claims")
         return None
+    logger.info("Supabase auth verified claims for sub=%s", claims.supabase_user_id)
     return _get_or_create_supabase_user(claims, db)
 
 
@@ -109,15 +116,19 @@ def get_current_user(
     credentials_exception = _build_credentials_exception()
 
     if not get_supabase_auth_enabled():
+        logger.info("Auth path selected: legacy_only")
         user = _get_legacy_user(token, db)
         if user is None:
             raise credentials_exception
         return user
 
     if get_supabase_dual_auth_enabled():
+        logger.info("Auth path selected: dual_auth")
         legacy_user = _get_legacy_user(token, db)
         if legacy_user is not None:
             return legacy_user
+    else:
+        logger.info("Auth path selected: supabase_only")
 
     supabase_user = _get_supabase_user(token, db)
     if supabase_user is not None:
