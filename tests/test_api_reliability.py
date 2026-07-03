@@ -185,3 +185,18 @@ def test_relationship_scores_cors_preflight_allows_local_frontend(client):
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
     assert "GET" in response.headers["access-control-allow-methods"]
+
+
+def test_opportunities_cors_preflight_allows_alternate_local_frontend_port(client):
+    response = client.options(
+        "/opportunities",
+        headers={
+            "Origin": "http://localhost:5174",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5174"
+    assert "GET" in response.headers["access-control-allow-methods"]

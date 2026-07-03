@@ -2,6 +2,13 @@ import { isSupabaseAuthProvider } from "../lib/authProvider";
 import { getSupabaseAccessToken } from "../lib/supabaseClient";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const OPTIONAL_PROFILE_CACHE_TTL_MS = 3000;
+
+let optionalProfileCache = {
+  value: undefined,
+  expiresAt: 0,
+  inFlight: null,
+};
 
 function getToken() {
   return localStorage.getItem("access_token");
@@ -62,6 +69,54 @@ async function request(path, { method = "GET", body, auth = true, timeout = 3000
     }
     throw err;
   }
+}
+
+function readOptionalProfileCache() {
+  if (optionalProfileCache.expiresAt > Date.now()) {
+    return optionalProfileCache.value;
+  }
+  return undefined;
+}
+
+function writeOptionalProfileCache(value) {
+  optionalProfileCache = {
+    value,
+    expiresAt: Date.now() + OPTIONAL_PROFILE_CACHE_TTL_MS,
+    inFlight: null,
+  };
+  return value;
+}
+
+function clearOptionalProfileCache() {
+  optionalProfileCache = {
+    value: undefined,
+    expiresAt: 0,
+    inFlight: null,
+  };
+}
+
+async function getOptionalProfile() {
+  const cached = readOptionalProfileCache();
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  if (optionalProfileCache.inFlight) {
+    return optionalProfileCache.inFlight;
+  }
+
+  optionalProfileCache.inFlight = api.profile
+    .get()
+    .then((profile) => writeOptionalProfileCache(profile))
+    .catch((error) => {
+      optionalProfileCache.inFlight = null;
+      if (error?.status === 404) {
+        return writeOptionalProfileCache(null);
+      }
+      throw error;
+    });
+
+  return optionalProfileCache.inFlight;
 }
 
 // Helper to build a query string from a params object, skipping undefined/null/empty values.
@@ -145,8 +200,17 @@ export const api = {
 
   profile: {
     get: () => request("/profile", { method: "GET" }),
-    update: (body) => request("/profile", { method: "PUT", body }),
-    remove: () => request("/profile", { method: "DELETE" }),
+    getOptional: () => getOptionalProfile(),
+    update: (body) =>
+      request("/profile", { method: "PUT", body }).then((result) => {
+        clearOptionalProfileCache();
+        return result;
+      }),
+    remove: () =>
+      request("/profile", { method: "DELETE" }).then((result) => {
+        clearOptionalProfileCache();
+        return result;
+      }),
   },
 
   relationshipScores: {

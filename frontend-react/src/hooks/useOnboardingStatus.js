@@ -102,7 +102,7 @@ export function useOnboardingStatus(username) {
 
       try {
         const [profileResult, contactsResult, eventsResult, followUpsResult] = await Promise.allSettled([
-          api.profile.get(),
+          api.profile.getOptional(),
           api.contacts.list({ limit: 1 }),
           api.events.list({ limit: 1 }),
           api.followUps.list({ limit: 1 }),
@@ -112,8 +112,6 @@ export function useOnboardingStatus(username) {
 
         if (profileResult.status === "fulfilled") {
           setProfile(profileResult.value);
-        } else if (profileResult.reason?.status === 404) {
-          setProfile(null);
         } else {
           throw profileResult.reason;
         }
@@ -141,7 +139,7 @@ export function useOnboardingStatus(username) {
     return () => {
       active = false;
     };
-  }, [refreshIndex]);
+  }, [refreshIndex, username]);
 
   const summary = useMemo(
     () => summarizeOnboarding(profile, contacts, events, followUps),

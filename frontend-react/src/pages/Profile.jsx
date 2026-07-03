@@ -45,18 +45,20 @@ export default function Profile() {
     setSaveMessage("");
     try {
       const [profileResult, personalizationResult] = await Promise.allSettled([
-        api.profile.get(),
+        api.profile.getOptional(),
         api.personalization.profile(),
       ]);
 
       if (profileResult.status === "fulfilled") {
-        setProfile(profileResult.value);
-        setForm(buildInitialForm(profileResult.value));
-        setFirstTimeSetup(false);
-      } else if (profileResult.reason?.status === 404) {
-        setProfile(null);
-        setForm(buildInitialForm(null));
-        setFirstTimeSetup(true);
+        if (profileResult.value) {
+          setProfile(profileResult.value);
+          setForm(buildInitialForm(profileResult.value));
+          setFirstTimeSetup(false);
+        } else {
+          setProfile(null);
+          setForm(buildInitialForm(null));
+          setFirstTimeSetup(true);
+        }
       } else {
         throw profileResult.reason;
       }

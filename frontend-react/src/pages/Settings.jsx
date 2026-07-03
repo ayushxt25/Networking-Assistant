@@ -27,13 +27,13 @@ export default function Settings() {
     setError(null);
     try {
       const [profileResult, personalizationResult, feedbackResult] = await Promise.allSettled([
-        api.profile.get(),
+        api.profile.getOptional(),
         api.personalization.profile(),
         api.feedback.summary(),
       ]);
 
       if (profileResult.status === "fulfilled") setProfile(profileResult.value);
-      else if (profileResult.reason?.status !== 404) throw profileResult.reason;
+      else throw profileResult.reason;
 
       if (personalizationResult.status === "fulfilled") setPersonalization(personalizationResult.value);
       if (feedbackResult.status === "fulfilled") setFeedbackSummary(feedbackResult.value);
