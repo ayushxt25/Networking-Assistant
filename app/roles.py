@@ -10,5 +10,12 @@ def normalize_user_role(role: str | None) -> str:
     return normalized
 
 
+def coerce_user_role(role: str | None) -> str:
+    try:
+        return normalize_user_role(role)
+    except ValueError:
+        return DEFAULT_ROLE
+
+
 def is_admin_role(role: str | None) -> bool:
     return normalize_user_role(role) == ADMIN_ROLE

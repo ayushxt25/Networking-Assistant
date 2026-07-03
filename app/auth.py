@@ -13,6 +13,7 @@ and is intentionally obvious so it's never mistaken for a real secret.
 """
 
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -32,6 +33,10 @@ def hash_password(plain_password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return _pwd_context.verify(plain_password, hashed_password)
+
+
+def create_unusable_password_hash(seed: str) -> str:
+    return hash_password(f"supabase-unusable::{seed}::{secrets.token_urlsafe(16)}")
 
 
 def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> str:

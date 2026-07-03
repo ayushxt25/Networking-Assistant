@@ -71,3 +71,25 @@ def get_cors_allowed_origins() -> list[str]:
     if raw_value.strip():
         return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
     return list(DEFAULT_CORS_ALLOWED_ORIGINS)
+
+
+def get_supabase_url() -> str | None:
+    value = os.getenv("SUPABASE_URL", "").strip()
+    return value or None
+
+
+def get_supabase_jwt_secret() -> str | None:
+    value = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+    return value or None
+
+
+def get_supabase_audience() -> str:
+    return os.getenv("SUPABASE_AUDIENCE", "authenticated").strip() or "authenticated"
+
+
+def get_supabase_auth_enabled() -> bool:
+    return os.getenv("SUPABASE_AUTH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_supabase_dual_auth_enabled() -> bool:
+    return os.getenv("SUPABASE_DUAL_AUTH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
