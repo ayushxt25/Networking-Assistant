@@ -544,7 +544,7 @@ export default function Navbar() {
               <Users2 className="h-4 w-4 text-white" />
             </div>
             <span className="hidden font-bold text-white sm:block">
-              Networking<span className="gradient-text">Assistant</span>
+              <span className="gradient-text">Nexora</span>
             </span>
           </Link>
 
