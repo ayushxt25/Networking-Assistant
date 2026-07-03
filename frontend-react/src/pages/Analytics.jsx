@@ -119,7 +119,7 @@ const sortOptions = [
 export default function Analytics() {
   const navigate = useNavigate();
   const [analytics, setAnalytics] = useState(null);
-  const [metrics, setMetrics] = useState(null);
+  const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [scores, setScores] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [interactions, setInteractions] = useState([]);
@@ -139,16 +139,16 @@ export default function Analytics() {
     setLoading(true);
     setError(null);
     try {
-      const [analyticsData, metricsData, scoresData, contactsData, interactionsData, followUpsData] = await Promise.all([
+      const [analyticsData, feedbackSummaryData, scoresData, contactsData, interactionsData, followUpsData] = await Promise.all([
         api.analytics.summary(),
-        api.metrics.get(),
+        api.feedback.summary().catch(() => null),
         api.relationshipScores.list(),
         api.contacts.list({ limit: 100, sort_by: "name", sort_order: "asc" }).catch(() => []),
         api.interactions.list({ limit: 100, sort_order: "desc" }).catch(() => []),
         api.followUps.list({ limit: 100, sort_by: "due_date", sort_order: "asc" }).catch(() => []),
       ]);
       setAnalytics(analyticsData);
-      setMetrics(metricsData);
+      setFeedbackSummary(feedbackSummaryData);
       setScores(scoresData?.scores || []);
       setContacts(contactsData || []);
       setInteractions(interactionsData || []);
@@ -249,20 +249,38 @@ export default function Analytics() {
   }, [filteredScores]);
 
   const topRelationships = filteredScores.slice(0, 5);
-  const recommendationEffectivenessSegments = metrics?.user_effectiveness
+  const recommendationFeedbackCounts = feedbackSummary?.recommendation_quality?.category_counts || {};
+  const acceptedRecommendationCount =
+    (recommendationFeedbackCounts.accepted || 0) + (recommendationFeedbackCounts.helpful || 0);
+  const rejectedRecommendationCount =
+    (recommendationFeedbackCounts.dismissed || 0) +
+    (recommendationFeedbackCounts.not_helpful || 0) +
+    (recommendationFeedbackCounts.irrelevant || 0);
+  const recommendationFeedbackTotal =
+    feedbackSummary?.recommendation_quality?.total ||
+    acceptedRecommendationCount + rejectedRecommendationCount;
+  const recommendationEffectivenessSegments = recommendationFeedbackTotal
     ? [
         {
           label: "Accepted",
-          value: metrics.user_effectiveness.recommendations.acceptance_rate,
+          value: acceptedRecommendationCount / recommendationFeedbackTotal,
           color: "#22c55e",
         },
         {
           label: "Rejected",
-          value: metrics.user_effectiveness.recommendations.rejection_rate,
+          value: rejectedRecommendationCount / recommendationFeedbackTotal,
           color: "#ef4444",
         },
       ]
     : [];
+
+  const completedFollowUpCount = followUps.filter((item) =>
+    ["done", "completed"].includes((item.status || "").toLowerCase())
+  ).length;
+  const trackedFollowUpCount = followUps.length;
+  const opportunityConversionRate = trackedFollowUpCount
+    ? completedFollowUpCount / trackedFollowUpCount
+    : 0;
 
   const followUpStateSegments = analytics
     ? [
@@ -444,35 +462,35 @@ export default function Analytics() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <InsightCard title="Opportunity conversion metrics" subtitle="User effectiveness metrics from the backend metrics service." icon={Sparkles}>
-          {metrics?.user_effectiveness ? (
+        <InsightCard title="Opportunity conversion metrics" subtitle="Derived from your live follow-up completion data." icon={Sparkles}>
+          {trackedFollowUpCount ? (
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
                 <p className="text-xs uppercase tracking-wide text-white/35">Conversion rate</p>
                 <p className="mt-2 text-2xl font-semibold text-white">
-                  {Math.round(metrics.user_effectiveness.opportunities.opportunity_conversion_rate * 100)}%
+                  {Math.round(opportunityConversionRate * 100)}%
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
                 <p className="text-xs uppercase tracking-wide text-white/35">Completed follow-ups</p>
                 <p className="mt-2 text-2xl font-semibold text-white">
-                  {metrics.user_effectiveness.opportunities.completed_follow_ups}
+                  {completedFollowUpCount}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
                 <p className="text-xs uppercase tracking-wide text-white/35">Tracked follow-ups</p>
                 <p className="mt-2 text-2xl font-semibold text-white">
-                  {metrics.user_effectiveness.opportunities.tracked_follow_ups}
+                  {trackedFollowUpCount}
                 </p>
               </div>
             </div>
           ) : (
-            <EmptyState title="No opportunity metrics yet" description="Backend effectiveness metrics are not available for this user yet." />
+            <EmptyState title="No opportunity metrics yet" description="Create and complete follow-ups to populate this section." />
           )}
         </InsightCard>
 
-        <InsightCard title="Recommendation effectiveness" subtitle="Acceptance and rejection from real feedback signals." icon={Lightbulb}>
-          {metrics?.user_effectiveness ? (
+        <InsightCard title="Recommendation effectiveness" subtitle="Acceptance and rejection derived from your real feedback history." icon={Lightbulb}>
+          {recommendationFeedbackTotal ? (
             <DonutChart segments={recommendationEffectivenessSegments} />
           ) : (
             <EmptyState title="No recommendation effectiveness yet" description="Give feedback on recommendations to populate this section." />

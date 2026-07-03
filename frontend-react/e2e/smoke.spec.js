@@ -169,7 +169,12 @@ test.describe.serial("authenticated smoke", () => {
 
     await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.getByText("Account menu")).toBeVisible();
+    await expect(page.getByText("Developer Console")).toHaveCount(0);
     await page.mouse.click(20, 20);
+
+    await page.goto("/analytics");
+    await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
+    await expect(page.getByText("Admin access required")).toHaveCount(0);
 
     await page.goto("/contacts");
     const companyFilter = page.getByRole("button", { name: /All companies/i });

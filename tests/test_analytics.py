@@ -153,3 +153,11 @@ def test_analytics_user_isolation(client):
     assert body["total_contacts"] == 0
     assert body["total_interactions"] == 0
     assert body["total_follow_ups"] == 0
+
+
+def test_non_admin_user_can_access_user_analytics_but_not_admin_metrics(client, auth_headers):
+    analytics_response = client.get("/analytics/summary", headers=auth_headers)
+    assert analytics_response.status_code == 200
+
+    metrics_response = client.get("/metrics", headers=auth_headers)
+    assert metrics_response.status_code == 403
