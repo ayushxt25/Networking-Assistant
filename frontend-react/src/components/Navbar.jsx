@@ -405,6 +405,9 @@ function UserMenu({ username, isAdmin, onLogout, mobile = false, onClose }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((value) => !value)}
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all duration-200 ${
           open || activeDeveloperRoute
             ? "border-white/12 bg-white/10 text-white shadow-[0_12px_30px_rgba(10,14,24,0.28)]"

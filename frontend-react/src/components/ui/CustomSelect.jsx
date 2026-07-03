@@ -134,6 +134,7 @@ export default function CustomSelect({
             <motion.div
               key="custom-select-menu"
               ref={menuRef}
+              role="listbox"
               initial={{ opacity: 0, y: 6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.985 }}
@@ -159,6 +160,8 @@ export default function CustomSelect({
                   <button
                     key={String(option.value)}
                     type="button"
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => {
                       onChange(option.value);
                       setOpen(false);
@@ -187,6 +190,8 @@ export default function CustomSelect({
           ref={triggerRef}
           type="button"
           disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
           onClick={() => {
             if (!disabled) setOpen((current) => !current);
           }}
