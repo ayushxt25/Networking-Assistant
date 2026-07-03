@@ -21,6 +21,7 @@ VALID_TARGET_TYPES = {
     "recommendation",
     "opportunity",
     "fact_check",
+    "app_experience",
     "contact",
     "interaction",
 }

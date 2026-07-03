@@ -108,6 +108,25 @@ def test_log_feedback_supports_fact_check_target_type(db_session):
     assert entry.target_id == "fact-check:ai-infrastructure-market"
 
 
+def test_log_feedback_supports_app_experience_target_type(db_session):
+    user = _create_test_user(db_session)
+
+    entry = log_feedback(
+        db_session,
+        user_id=user.id,
+        suggestion="App feedback: feature request",
+        category="helpful",
+        target_type="app_experience",
+        target_id="global",
+        notes="Would like better shortcut support",
+    )
+
+    assert entry.action == "like"
+    assert entry.category == "helpful"
+    assert entry.target_type == "app_experience"
+    assert entry.target_id == "global"
+
+
 def test_log_feedback_rejects_invalid_target_type(db_session):
     user = _create_test_user(db_session)
 
@@ -117,7 +136,7 @@ def test_log_feedback_rejects_invalid_target_type(db_session):
             user_id=user.id,
             suggestion="Unsupported target",
             category="helpful",
-            target_type="app_feedback",
+            target_type="unsupported_target",
         )
 
 

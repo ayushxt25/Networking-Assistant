@@ -205,6 +205,26 @@ def test_feedback_can_be_tied_to_fact_check_result(client, auth_headers):
     assert history[0]["category"] == "not_helpful"
 
 
+def test_feedback_can_be_tied_to_app_experience(client, auth_headers):
+    response = client.post(
+        "/feedback",
+        json={
+            "suggestion": "App feedback: bug",
+            "category": "not_helpful",
+            "target_type": "app_experience",
+            "target_id": "/help",
+            "notes": "The onboarding language could be clearer.",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    history = client.get("/feedback-history", headers=auth_headers).json()
+    assert history[0]["target_type"] == "app_experience"
+    assert history[0]["target_id"] == "/help"
+    assert history[0]["category"] == "not_helpful"
+
+
 def test_feedback_summary_endpoint(client, auth_headers):
     client.post(
         "/feedback",

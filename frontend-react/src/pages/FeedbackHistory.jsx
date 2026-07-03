@@ -118,8 +118,8 @@ export default function FeedbackHistory() {
         </div>
         <p className="mt-2 text-sm text-white/50">
           Review the feedback you've personally submitted so far. This now includes ratings from generated suggestions,
-          recommendation cards, opportunity cards, and fact-check results, along with the preference signals that come
-          from those actions.
+          recommendation cards, opportunity cards, fact-check results, and app feedback submissions, along with the
+          preference signals that come from those actions.
         </p>
       </section>
 
@@ -222,7 +222,7 @@ export default function FeedbackHistory() {
             description={
               entries.length
                 ? "Try clearing the current filters."
-                : "Rate a few generated suggestions, recommendation cards, opportunity cards, or fact-check results and your personal feedback signals will start to appear here."
+                : "Rate a few generated suggestions, recommendation cards, opportunity cards, fact-check results, or send app feedback and your personal feedback signals will start to appear here."
             }
             actionLabel={entries.length ? "Clear filters" : "Open Generate"}
             onAction={
