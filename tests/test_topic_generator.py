@@ -62,3 +62,53 @@ def test_generate_topics_falls_back_on_exact_max_length_value_error(monkeypatch)
     assert isinstance(result, list)
     assert len(result) == 3
     assert all(isinstance(item, str) and item.strip() for item in result)
+
+
+def test_generate_topics_rejects_gibberish_and_returns_fallback(monkeypatch):
+    def fake_generator(prompt, **kwargs):
+        return [{"generated_text": f"{prompt}\n1. Ejfhe | efaijdww | ejfhe\n2. zzzz zzzz zzzz\n3. qwert"}]
+
+    monkeypatch.setattr("app.services.topic_generator._get_generator", lambda: fake_generator)
+
+    result = generate_topics(["AI infrastructure"], ["robotics"])
+
+    assert len(result) == 3
+    assert all("|" not in item for item in result)
+    assert any("robotics" in item.lower() or "ai infrastructure" in item.lower() for item in result)
+
+
+def test_generate_topics_rejects_repeated_random_tokens(monkeypatch):
+    def fake_generator(prompt, **kwargs):
+        return [{"generated_text": f"{prompt}\n1. alpha alpha alpha alpha\n2. blerp blerp blerp\n3. how"}]
+
+    monkeypatch.setattr("app.services.topic_generator._get_generator", lambda: fake_generator)
+
+    result = generate_topics(["climate tech"], ["sustainability"])
+
+    assert len(result) == 3
+    assert all("alpha alpha alpha alpha" != item for item in result)
+    assert any("sustainability" in item.lower() for item in result)
+
+
+def test_generate_topics_preserves_normal_useful_output(monkeypatch):
+    def fake_generator(prompt, **kwargs):
+        return [
+            {
+                "generated_text": (
+                    f"{prompt}\n"
+                    "1. What trends in AI are you paying closest attention to this year?\n"
+                    "2. How does robotics influence the work your team is prioritizing right now?\n"
+                    "3. What drew you to this event in the first place?"
+                )
+            }
+        ]
+
+    monkeypatch.setattr("app.services.topic_generator._get_generator", lambda: fake_generator)
+
+    result = generate_topics(["AI"], ["robotics"])
+
+    assert result == [
+        "What trends in AI are you paying closest attention to this year?",
+        "How does robotics influence the work your team is prioritizing right now?",
+        "What drew you to this event in the first place?",
+    ]

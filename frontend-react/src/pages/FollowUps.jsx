@@ -253,7 +253,7 @@ export default function FollowUps() {
             description={
               query
                 ? "Try a different search term."
-                : "Create a follow-up here or from a contact profile using the existing backend flow."
+                : "Create a follow-up here or from a contact profile to keep relationship actions organized."
             }
             actionLabel={query ? "Clear search" : "Add follow-up"}
             onAction={() => {
@@ -318,12 +318,11 @@ export default function FollowUps() {
       <section className="glass rounded-2xl p-5 lg:p-6">
         <div className="flex items-center gap-2 mb-3">
           <CalendarClock className="h-4 w-4 text-accent" />
-          <h2 className="text-base font-semibold text-white">Backend-backed action model</h2>
+          <h2 className="text-base font-semibold text-white">Keep follow-ups organized</h2>
         </div>
         <p className="text-sm text-white/55 max-w-3xl">
-          Completion uses the existing `PUT /follow-ups/{'{id}'}` update flow. Quick follow-up creation from a contact
-          profile already works through the same backend create endpoint, so this page shares that exact capability
-          instead of inventing a separate action API.
+          Follow-ups stay synced as you complete tasks, create new reminders from relationship context, and keep your
+          next actions clear across contacts, events, and ongoing outreach.
         </p>
       </section>
 

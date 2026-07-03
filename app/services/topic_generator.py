@@ -17,6 +17,7 @@ is naturally a bit rough compared to larger models.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -58,10 +59,57 @@ def _build_prompt(
 def _clean_line(line: str) -> str:
     """Strip leading numbering/bullets and surrounding whitespace from a line."""
     cleaned = line.strip()
-    for prefix in ("1.", "2.", "3.", "-", "*", "•"):
+    for prefix in ("1.", "2.", "3.", "-", "*", "â€¢"):
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
     return cleaned
+
+
+def _normalize_topic_token(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip(" .,:;!?")).strip()
+
+
+def _dedupe_preserve_order(items: List[str]) -> List[str]:
+    seen = set()
+    result = []
+    for item in items:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _is_low_quality_suggestion(suggestion: str) -> bool:
+    text = suggestion.strip()
+    if not text:
+        return True
+    if text.count("|") >= 2:
+        return True
+    if len(text) < 18:
+        return True
+
+    words = re.findall(r"[A-Za-z']+", text)
+    if len(words) < 4:
+        return True
+
+    alpha_ratio = sum(char.isalpha() or char.isspace() for char in text) / max(len(text), 1)
+    if alpha_ratio < 0.72:
+        return True
+
+    lowercase_words = [word.lower() for word in words]
+    unique_words = set(lowercase_words)
+    if len(unique_words) <= 2 and len(lowercase_words) >= 4:
+        return True
+    if any(lowercase_words.count(word) >= 3 for word in unique_words):
+        return True
+
+    useful_markers = ("?", "how ", "what ", "which ", "why ", "where ", "when ", "tell me", "i noticed")
+    if not any(marker in text.lower() for marker in useful_markers):
+        return True
+
+    return False
 
 
 def _get_generator():
@@ -69,7 +117,6 @@ def _get_generator():
 
     if _generator is not None:
         return _generator
-
     if _generator_load_attempted:
         return None
 
@@ -96,17 +143,43 @@ def _generate_topics_fallback(
     interests: List[str],
     relationship_context: Optional[str] = None,
 ) -> List[str]:
-    theme_text = ", ".join(themes) if themes else "the event"
-    interest_text = ", ".join(interests) if interests else "meeting new people"
-    context_hint = ""
-    if relationship_context:
-        context_hint = " Based on your existing relationship context, where relevant."
+    primary_theme = _normalize_topic_token(themes[0]) if themes else "this event"
+    secondary_theme = _normalize_topic_token(themes[1]) if len(themes) > 1 else primary_theme
+    primary_interest = _normalize_topic_token(interests[0]) if interests else "your work"
+    secondary_interest = _normalize_topic_token(interests[1]) if len(interests) > 1 else primary_interest
+    context_hint = (
+        " I want to keep the conversation relevant to the relationships and priorities I'm already tracking."
+        if relationship_context
+        else ""
+    )
 
-    return [
-        f"What drew you to {theme_text}?{context_hint}",
-        f"How does {interest_text} connect with your work right now?",
-        f"What is one idea from {theme_text} you think more people should be discussing?",
+    starters = [
+        f"I noticed this event focuses on {primary_theme}. What trends are you watching most closely there?{context_hint}",
+        f"What inspired your work in {primary_interest}?",
+        f"How do you see {secondary_interest} changing over the next year?",
     ]
+
+    if secondary_theme and secondary_theme != primary_theme:
+        starters.append(
+            f"How does {secondary_theme} show up in the conversations you're having most often right now?"
+        )
+
+    cleaned = [_normalize_topic_token(item) for item in starters if item.strip()]
+    return _dedupe_preserve_order(cleaned)[:3]
+
+
+def finalize_topic_suggestions(
+    suggestions: List[str],
+    themes: List[str],
+    interests: List[str],
+    relationship_context: Optional[str] = None,
+) -> List[str]:
+    cleaned = [_clean_line(item) for item in suggestions]
+    cleaned = [item for item in cleaned if item and not _is_low_quality_suggestion(item)]
+    cleaned = _dedupe_preserve_order(cleaned)
+    if cleaned:
+        return cleaned[:3]
+    return _generate_topics_fallback(themes, interests, relationship_context)
 
 
 def generate_topics(
@@ -136,23 +209,13 @@ def generate_topics(
             max_new_tokens=80,
             num_return_sequences=1,
             truncation=True,
-            pad_token_id=50256,  # GPT-2's eos_token_id, silences a padding warning
+            pad_token_id=50256,
         )
     except Exception as exc:
         logger.warning("Topic generation failed; using fallback suggestions: %s", exc)
         return _generate_topics_fallback(themes, interests, relationship_context)
 
     generated_text = output[0]["generated_text"]
-
-    # Drop the prompt itself, keep only what GPT-2 added after it.
     continuation = generated_text[len(prompt):]
-
     lines = continuation.split("\n")
-    suggestions = [_clean_line(line) for line in lines]
-    suggestions = [s for s in suggestions if s]  # drop empties from cleanup
-
-    final_suggestions = suggestions[:3]
-    if final_suggestions:
-        return final_suggestions
-
-    return _generate_topics_fallback(themes, interests, relationship_context)
+    return finalize_topic_suggestions(lines, themes, interests, relationship_context)

@@ -57,7 +57,7 @@ from app.services.fact_checker import fact_check
 from app.services.feedback_logger import load_feedback, log_feedback, summarize_feedback
 from app.services.history_logger import load_history, log_conversation
 from app.services.context_service import assemble_generation_context
-from app.services.topic_generator import generate_topics
+from app.services.topic_generator import finalize_topic_suggestions, generate_topics
 
 router = APIRouter()
 
@@ -101,6 +101,12 @@ def generate_conversation(
     )
     try:
         suggestions = generate_topics(
+            themes,
+            body.interests,
+            relationship_context=generation_context.combined_summary,
+        )
+        suggestions = finalize_topic_suggestions(
+            suggestions,
             themes,
             body.interests,
             relationship_context=generation_context.combined_summary,

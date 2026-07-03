@@ -113,6 +113,36 @@ def test_generate_conversation_long_input_does_not_crash_on_topic_generator_valu
     assert body["error"]["message"] == "Conversation generation is temporarily unavailable"
 
 
+def test_generate_conversation_replaces_known_gibberish_pattern_with_fallback(
+    client, auth_headers, monkeypatch
+):
+    from app.routes import conversation as conversation_routes
+
+    def fake_generate_topics(themes, interests, relationship_context=None):
+        return [
+            "Ejfhe | efaijdww | ejfhe",
+            "zzzz zzzz zzzz",
+            "qwert",
+        ]
+
+    monkeypatch.setattr(conversation_routes, "generate_topics", fake_generate_topics)
+
+    response = client.post(
+        "/generate-conversation",
+        json={"description": "AI for Sustainable Cities", "interests": ["climate change"]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"]
+    assert all("|" not in item for item in body["suggestions"])
+    assert any(
+        "climate change" in item.lower() or "ai for sustainable cities" in item.lower()
+        for item in body["suggestions"]
+    )
+
+
 def test_feedback_endpoint_accepts_valid_action(client, auth_headers):
     response = client.post(
         "/feedback",
