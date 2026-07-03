@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, Copy, Search } from "lucide-react";
+import { CheckCircle2, Copy, MessageSquareHeart, Search } from "lucide-react";
 import { api } from "../api/client";
 import Button from "../components/Button";
 import EmptyState from "../components/ui/EmptyState";
@@ -13,17 +13,43 @@ const exampleTopics = [
   "blockchain in healthcare",
 ];
 
+const factCheckFeedbackOptions = [
+  { key: "helpful", label: "Useful" },
+  { key: "not_helpful", label: "Insufficient" },
+  { key: "irrelevant", label: "Unclear" },
+];
+
+function buildFactCheckTargetId(query) {
+  return `fact-check:${(query || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")}`;
+}
+
 export default function FactCheck() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [feedbackValue, setFeedbackValue] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackError, setFeedbackError] = useState("");
+
+  const factCheckTargetId = useMemo(
+    () => (result?.query ? buildFactCheckTargetId(result.query) : ""),
+    [result]
+  );
 
   async function handleCheck(event) {
     event.preventDefault();
     setError("");
     setResult(null);
+    setFeedbackValue("");
+    setFeedbackMessage("");
+    setFeedbackError("");
     if (!query.trim()) {
       setError("Please enter a topic to verify.");
       return;
@@ -41,6 +67,28 @@ export default function FactCheck() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFeedback(category) {
+    if (!result?.query) return;
+    setFeedbackSubmitting(true);
+    setFeedbackError("");
+    try {
+      await api.submitFeedback({
+        suggestion: result.query,
+        category,
+        target_type: "fact_check",
+        target_id: factCheckTargetId,
+        notes: result.summary ? result.summary.slice(0, 240) : undefined,
+      });
+      setFeedbackValue(category);
+      setFeedbackMessage("Feedback saved");
+      window.setTimeout(() => setFeedbackMessage(""), 1600);
+    } catch (err) {
+      setFeedbackError(err.message || "Could not save feedback right now.");
+    } finally {
+      setFeedbackSubmitting(false);
     }
   }
 
@@ -183,6 +231,37 @@ export default function FactCheck() {
               <p className="text-xs uppercase tracking-wide text-white/35">Evidence summary</p>
               <p className="mt-2 text-sm leading-7 text-white/80">{result.summary}</p>
             </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.03] p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <MessageSquareHeart className="h-4 w-4 text-accent-secondary" />
+              <p className="text-sm font-medium text-white">Rate this fact check</p>
+              <span className="text-xs text-white/35">This only records usefulness feedback for future product tuning.</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {factCheckFeedbackOptions.map((option) => {
+                const active = feedbackValue === option.key;
+                return (
+                  <button
+                    key={option.key}
+                    onClick={() => handleFeedback(option.key)}
+                    disabled={feedbackSubmitting || active}
+                    className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                      active
+                        ? "border-accent-secondary/30 bg-accent-secondary/15 text-accent-secondary"
+                        : feedbackSubmitting
+                          ? "border-white/10 bg-white/5 text-white/35"
+                          : "border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            {feedbackMessage ? <p className="mt-3 text-xs text-emerald-300">{feedbackMessage}</p> : null}
+            {feedbackError ? <p className="mt-3 text-xs text-red-300">{feedbackError}</p> : null}
           </div>
         </motion.section>
       ) : null}

@@ -185,6 +185,26 @@ def test_feedback_can_be_tied_to_generation_output(client, auth_headers):
     assert history[0]["category"] == "wrong_tone"
 
 
+def test_feedback_can_be_tied_to_fact_check_result(client, auth_headers):
+    response = client.post(
+        "/feedback",
+        json={
+            "suggestion": "AI infrastructure market",
+            "category": "not_helpful",
+            "target_type": "fact_check",
+            "target_id": "fact-check:ai-infrastructure-market",
+            "notes": "Needed more detail",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    history = client.get("/feedback-history", headers=auth_headers).json()
+    assert history[0]["target_type"] == "fact_check"
+    assert history[0]["target_id"] == "fact-check:ai-infrastructure-market"
+    assert history[0]["category"] == "not_helpful"
+
+
 def test_feedback_summary_endpoint(client, auth_headers):
     client.post(
         "/feedback",

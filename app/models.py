@@ -51,7 +51,7 @@ class FeedbackRequest(BaseModel):
     suggestion: str = Field(..., description="The exact suggestion text being rated")
     action: Optional[str] = Field(default=None, description="Legacy value: either 'like' or 'dislike'")
     category: Optional[str] = Field(default=None, description="Structured feedback category")
-    target_type: Optional[str] = Field(default=None, description="generation_suggestion, recommendation, opportunity, contact, or interaction")
+    target_type: Optional[str] = Field(default=None, description="generation_suggestion, recommendation, opportunity, fact_check, contact, or interaction")
     target_id: Optional[str] = Field(default=None, description="Entity identifier for the feedback target")
     notes: Optional[str] = Field(default=None, description="Optional free-text feedback note")
 

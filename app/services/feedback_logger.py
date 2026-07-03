@@ -16,7 +16,14 @@ VALID_CATEGORIES = {
     "accepted",
     "dismissed",
 }
-VALID_TARGET_TYPES = {"generation_suggestion", "recommendation", "opportunity", "contact", "interaction"}
+VALID_TARGET_TYPES = {
+    "generation_suggestion",
+    "recommendation",
+    "opportunity",
+    "fact_check",
+    "contact",
+    "interaction",
+}
 NEGATIVE_CATEGORIES = {"not_helpful", "irrelevant", "too_generic", "wrong_tone", "dismissed"}
 
 
