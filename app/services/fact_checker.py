@@ -12,6 +12,7 @@ instead of pretending a weak match is reliable.
 
 from __future__ import annotations
 
+import logging
 import re
 from html import unescape
 from urllib.parse import quote
@@ -25,6 +26,7 @@ from app.config import (
 )
 from app.services.external_search import tavily_search
 
+logger = logging.getLogger(__name__)
 WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/{}"
 WIKIPEDIA_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 REQUEST_TIMEOUT_SECONDS = 5
@@ -183,9 +185,11 @@ def _is_useful_external_result(result: dict, query: str) -> bool:
 def _build_external_summary(results: list[dict], query: str) -> str:
     useful_bits: list[str] = []
     seen = set()
+    rejected_count = 0
 
     for result in results:
         if not _is_useful_external_result(result, query):
+            rejected_count += 1
             continue
 
         title = _clean_text(result.get("title"))
@@ -204,21 +208,30 @@ def _build_external_summary(results: list[dict], query: str) -> str:
             break
 
     if not useful_bits:
+        if rejected_count:
+            logger.info("Tavily weak results rejected feature=fact_check rejected=%s", rejected_count)
         return ""
 
     summary = " ".join(useful_bits)
     if not _is_useful_summary(summary, query):
+        logger.info("Tavily weak results rejected feature=fact_check rejected=%s", max(rejected_count, 1))
         return ""
     return summary
 
 
 def _fact_check_with_tavily(query: str) -> str:
     if not get_fact_check_external_search_enabled():
+        logger.info("Tavily disabled feature=fact_check")
         return ""
     if not get_tavily_api_key():
+        logger.info("Tavily missing API key feature=fact_check")
         return ""
 
-    results = tavily_search(query, max_results=get_fact_check_external_max_results())
+    results = tavily_search(
+        query,
+        max_results=get_fact_check_external_max_results(),
+        feature="fact_check",
+    )
     return _build_external_summary(results, query)
 
 
@@ -239,6 +252,7 @@ def fact_check(query: str) -> str:
         if tavily_summary:
             return tavily_summary
     except (requests.RequestException, ValueError, KeyError, TypeError):
+        logger.info("Fact check fallback used feature=fact_check reason=tavily_unavailable")
         pass
 
     try:
@@ -265,4 +279,5 @@ def fact_check(query: str) -> str:
     except (requests.RequestException, ValueError):
         pass
 
+    logger.info("Fact check fallback used feature=fact_check reason=insufficient_info")
     return _insufficient_info_message(normalized_query)

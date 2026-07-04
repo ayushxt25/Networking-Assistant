@@ -154,7 +154,7 @@ def test_generate_topics_tavily_success_enriches_prompt(monkeypatch):
     monkeypatch.setattr("app.services.topic_generator.get_tavily_api_key", lambda: "test-key")
     monkeypatch.setattr(
         "app.services.topic_generator.tavily_search",
-        lambda query, max_results=None: [
+        lambda query, max_results=None, feature=None: [
             {
                 "title": "AI developer tooling",
                 "content": (
@@ -184,7 +184,7 @@ def test_generate_topics_tavily_failure_falls_back_safely(monkeypatch):
     monkeypatch.setattr("app.services.topic_generator.get_tavily_api_key", lambda: "test-key")
     monkeypatch.setattr(
         "app.services.topic_generator.tavily_search",
-        lambda query, max_results=None: (_ for _ in ()).throw(requests.exceptions.Timeout("timeout")),
+        lambda query, max_results=None, feature=None: (_ for _ in ()).throw(requests.exceptions.Timeout("timeout")),
     )
 
     result = generate_topics(["AI"], ["robotics"], description="OpenAI developer summit")
@@ -205,7 +205,7 @@ def test_generate_topics_ignores_weak_tavily_snippets(monkeypatch):
     monkeypatch.setattr("app.services.topic_generator.get_tavily_api_key", lambda: "test-key")
     monkeypatch.setattr(
         "app.services.topic_generator.tavily_search",
-        lambda query, max_results=None: [
+        lambda query, max_results=None, feature=None: [
             {"title": "AI", "content": "Short snippet."},
             {"title": "Summit", "content": "Another weak note."},
         ],

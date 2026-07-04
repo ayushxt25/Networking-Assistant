@@ -98,7 +98,8 @@ def _build_prompt(
 def _clean_line(line: str) -> str:
     """Strip leading numbering/bullets and surrounding whitespace from a line."""
     cleaned = line.strip()
-    for prefix in ("1.", "2.", "3.", "-", "*", "â€¢"):
+    cleaned = re.sub(r"^\u2022\s*", "", cleaned)
+    for prefix in ("1.", "2.", "3.", "-", "*"):
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
     return cleaned
@@ -182,9 +183,11 @@ def _is_useful_public_context_result(result: dict, query: str) -> bool:
 def _summarize_public_context(results: List[dict], query: str) -> str:
     snippets: list[str] = []
     seen = set()
+    rejected_count = 0
 
     for result in results:
         if not _is_useful_public_context_result(result, query):
+            rejected_count += 1
             continue
 
         title = _clean_line(str(result.get("title", "")).strip())
@@ -193,6 +196,7 @@ def _summarize_public_context(results: List[dict], query: str) -> str:
         content = re.split(r"(?<=[.!])\s+", content)[0].strip()
         content = content[:220].rstrip(" ,;:")
         if len(content) < 50:
+            rejected_count += 1
             continue
 
         snippet = f"{title}: {content}" if title and title.lower() not in content.lower() else content
@@ -205,6 +209,8 @@ def _summarize_public_context(results: List[dict], query: str) -> str:
         if len(snippets) >= 2:
             break
 
+    if rejected_count and not snippets:
+        logger.info("Tavily weak results rejected feature=prep rejected=%s", rejected_count)
     return " ".join(snippets)
 
 
@@ -221,17 +227,25 @@ def _is_useful_public_context_summary(summary: str) -> bool:
 
 def _fetch_public_context(description: str, themes: List[str], interests: List[str]) -> str:
     if not get_prep_external_context_enabled():
+        logger.info("Tavily disabled feature=prep")
         return ""
     if not get_tavily_api_key():
+        logger.info("Tavily missing API key feature=prep")
         return ""
 
     query = _build_public_context_query(description, themes, interests)
     if not query:
+        logger.info("Prep external context skipped feature=prep reason=insufficient_query_signal")
         return ""
 
-    results = tavily_search(query, max_results=get_prep_external_context_max_results())
+    results = tavily_search(
+        query,
+        max_results=get_prep_external_context_max_results(),
+        feature="prep",
+    )
     summary = _summarize_public_context(results, query)
     if not _is_useful_public_context_summary(summary):
+        logger.info("Prep external context fallback used feature=prep reason=weak_results")
         return ""
     return summary
 
@@ -356,8 +370,8 @@ def generate_topics(
     public_context = ""
     try:
         public_context = _fetch_public_context(description, themes, interests)
-    except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-        logger.info("Prep external context unavailable; continuing without enrichment: %s", exc)
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        logger.info("Prep external context fallback used feature=prep reason=tavily_unavailable")
 
     prompt = _build_prompt(themes, interests, relationship_context, public_context)
 
