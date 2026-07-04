@@ -51,6 +51,9 @@ def test_fact_check_endpoint(client, auth_headers):
     body = response.json()
     assert body["query"] == "blockchain"
     assert "summary" in body
+    assert set(body.keys()) == {"query", "summary"}
+    assert "confidence" not in body
+    assert "citations" not in body
 
 
 def test_generate_conversation_returns_themes_and_suggestions(client, auth_headers):
