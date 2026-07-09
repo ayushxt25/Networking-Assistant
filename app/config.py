@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 DEFAULT_RANKER_MODEL_DIR = PROJECT_ROOT / "data" / "models"
 DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "https://nexora-two-alpha.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
@@ -70,9 +71,23 @@ def get_cache_ttl_seconds() -> int:
 
 def get_cors_allowed_origins() -> list[str]:
     raw_value = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    seen: set[str] = set()
+    combined: list[str] = []
+
+    def add_origin(origin: str) -> None:
+        normalized = origin.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            combined.append(normalized)
+
     if raw_value.strip():
-        return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
-    return list(DEFAULT_CORS_ALLOWED_ORIGINS)
+        for origin in raw_value.split(","):
+            add_origin(origin)
+
+    for origin in DEFAULT_CORS_ALLOWED_ORIGINS:
+        add_origin(origin)
+
+    return combined
 
 
 def get_supabase_url() -> str | None:
