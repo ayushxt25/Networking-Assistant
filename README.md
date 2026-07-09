@@ -93,9 +93,9 @@ High-level flow:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `POST` | `/register` | Create a user account |
-| `POST` | `/login` | Get a bearer token for legacy auth |
-| `GET` | `/me` | Return the current authenticated user |
+| `POST` | `/auth/register` | Create a user account |
+| `POST` | `/auth/login` | Get a bearer token for legacy auth |
+| `GET` | `/auth/me` | Return the current authenticated user |
 | `POST` | `/generate-conversation` | Generate conversation starters for a prep scenario |
 | `POST` | `/fact-check` | Return a short verification summary for a topic |
 | `POST` | `/analyze-event` | Extract themes from an event description |
